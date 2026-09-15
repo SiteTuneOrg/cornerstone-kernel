@@ -58,9 +58,21 @@ Each of these is a real design fork, not an arbitrary choice:
   this kernel has one exception type per actual failure mode
   (`UnbalancedEntryException`, `AccountNotPostableException`,
   `NatureMismatchException`, `DuplicateAccountException`,
-  `DuplicateAccountCodeException`, `CurrencyMismatchException`) — each
-  carrying exactly the data needed to format its own message, sealed so a
-  `switch` over them is exhaustive.
+  `DuplicateAccountCodeException`, `CurrencyMismatchException`,
+  `CommodityConflictException`, `AccountIdConflictException`,
+  `ForeignAccountException`, `ForeignPostingException`,
+  `DuplicateJournalEntryException`, `InsufficientPostingsException`,
+  `CyclicAccountException`) — each carrying exactly the data needed to
+  format its own message, sealed so a `switch` over them is exhaustive. Kept
+  honest on a pass through `Ledger`: a handful of invariant violations
+  (a conflicting commodity registration, an id reused with a different
+  shape, an id already in use, a posting against an account owned by a
+  different `Ledger`) were still throwing a bare `IllegalArgumentException`
+  outside the sealed hierarchy — the three exceptions above closed that gap.
+  Plain `IllegalArgumentException` stays where it already was for ordinary
+  constructor argument validation (`Money`/`Quantity` refusing a negative
+  value, `Account` refusing a blank name) — that's a different kind of
+  failure than a ledger invariant, and the standard Java convention for it.
 
 ## Positions: an account's commodity is what it HOLDS, not what it's priced in
 
@@ -148,11 +160,39 @@ unit whose count is worth tracking separately from its money value**:
   Posting.debit(cdbXp, Money.of(1234, brl));
   ```
 
+`Account.code()` is meant to serve as a stable, user-assigned correlation
+key — e.g. matching an OFX import's account references, as discussed above.
+`Ledger.setReconciliationStatus(posting, status)` is the posting-level half
+of that same workflow: a `ReconciliationStatus` (`PENDING`, `CLEARED`,
+`RECONCILED`) tracked per `Posting`, the same mechanism most accounting
+tools use to mark "this posting has been matched against a bank statement".
+It lives on `Ledger`, not on `Posting` itself, on purpose — `Posting` and
+`JournalEntry` are this kernel's immutable values (see "`JournalEntry`
+cannot exist unbalanced" above), while `Account` and `Ledger` are its two
+mutable entities; reconciliation status is a fact about a posting's
+lifecycle that changes after the entry is posted, so it belongs with the
+other mutable, `Ledger`-owned side registries (`accountsByCode` is the
+other one). `Ledger.reconciliationStatusOf(posting)` defaults to `PENDING`
+for anything not explicitly marked otherwise.
+
 A full worked chart (bank accounts through every asset class above) lives
 in this project's commit history / chat log rather than duplicated here —
 the two rules above (position vs. no position, and which `AccountType`
 follows from each) are what to reapply to any new asset class that shows
 up later.
+
+`Quantity` only ever answers "how many units are held" — valuing a
+position (what it's worth today, not what it cost) needs a price-per-unit
+type this kernel didn't have until `Price` was added: `units` of a
+position commodity were `worth` some `Money`, on a `date`. Kept as an
+unreduced ratio of an already-typed `Quantity` and `Money` — the same shape
+a real quote line has ("1000,00000 cotas valiam R$12.345,67") — rather than
+a decimal rate that would round once to be stored and again to be applied.
+`Price.valueOf(Quantity)` still divides — a valuation is a report, not a
+posting, and nothing here feeds the result back into further exact
+arithmetic — but that division happens exactly once, against the two
+numbers the quote itself reported, and truncates toward zero like every
+other division in this kernel.
 
 ## `TRADING`: moving money between two different currencies
 
@@ -194,10 +234,18 @@ normal side is debit) is a legitimate, reportable state, not an error. That
 is exactly what `tradingUsd` ends up with here: +R$5.000 on `tradingBrl`,
 −US$1.000 on `tradingUsd`. Converted at the SAME rate the trade used
 (1.000 × 5,00 = 5.000), the pair exactly cancels — the trading accounts net
-to zero in a common currency for this one exchange. Any residual that shows
-up later, if a *different* rate is used to convert them, is real,
-observable FX gain/loss — this kernel doesn't compute that (no reporting
-layer yet), but the data it stores is enough for one to, later.
+to zero in a common currency for this one exchange.
+
+That conversion is what `ExchangeRate` is for: `base` of one currency was
+worth `quote` of another, on a `date` (e.g. `ExchangeRate.of(Money.of(100_000,
+usd), Money.of(500_000, brl), hoje)` records that US$1.000,00 was R$5.000,00
+that day). Same shape as `Price`, for the same reason — an unreduced ratio
+of two already-typed `Money` values, not a decimal that would round twice.
+`ExchangeRate.convert(Money)` is what closes the loop `TRADING` leaves open:
+converting `tradingUsd`'s balance at this rate reproduces `tradingBrl`'s
+balance exactly, for this one exchange (see `ExchangeRateTest`). Any
+residual that shows up later, if a *different* rate is used to convert the
+same balances, is real, observable FX gain/loss.
 
 ## `Ledger` owns the commodity registry and idempotent chart-building
 
@@ -279,13 +327,18 @@ src/main/java/com/cornerstone/ledger/model/
   Commodity.java                 currency or asset a Money/Quantity is denominated in
   Money.java                     immutable, non-negative amount + commodity
   Quantity.java                   immutable, non-negative unit count of an ASSET commodity
+  Price.java                     valuation quote: units were worth this Money, on a date
+  ExchangeRate.java               valuation quote between two currencies, on a date
+  ReconciliationStatus.java       pending/cleared/reconciled, tracked per Posting on Ledger
   Account.java                   chart-of-accounts node; owns tree invariants
   Posting.java                   one debit or credit leg of an entry; Money + optional Quantity
   JournalEntry.java               the double-entry aggregate; valid by construction
-  Ledger.java                     aggregate root: commodity registry + chart of accounts + posted entries
-  LedgerException.java + 6 subclasses
+  Ledger.java                     aggregate root: commodity registry + chart of accounts + posted entries + reconciliation
+  LedgerException.java + 13 subclasses
 src/test/java/.../model/LedgerTest.java
-src/test/java/.../model/PosicaoTest.java
+src/test/java/.../model/PositionTest.java
+src/test/java/.../model/PriceTest.java
+src/test/java/.../model/ExchangeRateTest.java
 src/test/java/.../model/LedgerChartBuildingTest.java
 ```
 

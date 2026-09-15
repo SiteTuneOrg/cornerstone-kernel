@@ -62,9 +62,22 @@ Cada uma destas é uma bifurcação real de design, não uma escolha arbitrária
   cláusula `catch`, então este kernel tem um tipo de exceção por modo de
   falha real (`UnbalancedEntryException`, `AccountNotPostableException`,
   `NatureMismatchException`, `DuplicateAccountException`,
-  `DuplicateAccountCodeException`, `CurrencyMismatchException`) — cada uma
-  carregando exatamente os dados necessários pra formatar sua própria
-  mensagem, selada (`sealed`) para que um `switch` sobre elas seja exaustivo.
+  `DuplicateAccountCodeException`, `CurrencyMismatchException`,
+  `CommodityConflictException`, `AccountIdConflictException`,
+  `ForeignAccountException`, `ForeignPostingException`,
+  `DuplicateJournalEntryException`, `InsufficientPostingsException`,
+  `CyclicAccountException`) — cada uma carregando exatamente os dados
+  necessários pra formatar sua própria mensagem, selada (`sealed`) para que
+  um `switch` sobre elas seja exaustivo. Mantido honesto numa revisão do
+  `Ledger`: um punhado de violações de invariante (registro de commodity
+  conflitante, id reutilizado com forma diferente, id já em uso, posting
+  contra uma conta que pertence a outro `Ledger`) ainda lançava um
+  `IllegalArgumentException` cru, fora da hierarquia selada — as três
+  exceções acima fecharam essa lacuna. `IllegalArgumentException` puro
+  continua onde já estava, pra validação comum de argumento de construtor
+  (`Money`/`Quantity` recusando valor negativo, `Account` recusando nome
+  vazio) — isso é um tipo de falha diferente de um invariante do ledger, e é
+  a convenção padrão do Java pra esse caso.
 
 ## Posições: a commodity de uma conta é o que ela GUARDA, não em que ela é precificada
 
@@ -155,11 +168,42 @@ contagem vale a pena rastrear separada do seu valor em dinheiro**:
   Posting.debit(cdbXp, Money.of(1234, brl));
   ```
 
+`Account.code()` é pensado como chave de correlação estável definida pelo
+usuário — ex. batendo com as referências de conta de uma importação de OFX,
+como discutido acima. `Ledger.setReconciliationStatus(posting, status)` é a
+metade do mesmo fluxo no nível do posting: um `ReconciliationStatus`
+(`PENDING`, `CLEARED`, `RECONCILED`) rastreado por `Posting`, o mesmo
+mecanismo que a maioria das ferramentas de contabilidade usa pra marcar
+"este posting já foi batido contra um extrato bancário". Ele mora no
+`Ledger`, não no próprio `Posting`, de propósito — `Posting` e
+`JournalEntry` são os valores imutáveis deste kernel (veja "`JournalEntry`
+não pode existir desbalanceado" acima), enquanto `Account` e `Ledger` são
+suas duas entidades mutáveis; status de conciliação é um fato sobre o ciclo
+de vida de um posting que muda depois que o lançamento já foi postado,
+então pertence junto dos outros registros paralelos mutáveis que o
+`Ledger` já possui (`accountsByCode` é o outro). `Ledger.reconciliationStatusOf(posting)`
+retorna `PENDING` por padrão pra qualquer coisa que não tenha sido marcada
+explicitamente de outro jeito.
+
 Um plano de contas completo e trabalhado (contas bancárias até cada classe
 de ativo acima) mora no histórico de commits/log de conversa deste projeto
 em vez de ser duplicado aqui — as duas regras acima (posição vs. sem
 posição, e qual `AccountType` segue de cada uma) são o que reaplicar a
 qualquer nova classe de ativo que aparecer depois.
+
+`Quantity` só responde "quantas unidades estão em posse" — valorizar uma
+posição (quanto ela vale hoje, não quanto custou) precisa de um tipo de
+preço-por-unidade que este kernel não tinha até `Price` ser adicionado:
+`units` de uma commodity de posição valiam (`worth`) determinado `Money`,
+numa `date`. Mantido como uma razão não-reduzida entre uma `Quantity` e um
+`Money` já tipados — a mesma forma que uma linha de cotação real tem
+("1000,00000 cotas valiam R$12.345,67") — em vez de uma taxa decimal que
+arredondaria uma vez pra ser guardada e outra pra ser aplicada.
+`Price.valueOf(Quantity)` ainda divide — uma valorização é um relatório,
+não um posting, e nada aqui realimenta o resultado numa aritmética exata
+posterior — mas essa divisão acontece exatamente uma vez, contra os dois
+números que a própria cotação informou, e trunca em direção a zero como
+qualquer outra divisão neste kernel.
 
 ## `TRADING`: movendo dinheiro entre duas moedas diferentes
 
@@ -203,10 +247,18 @@ erro. É exatamente isso que `tradingUsd` acaba tendo aqui: +R$5.000 em
 `tradingBrl`, −US$1.000 em `tradingUsd`. Convertidos pela MESMA cotação
 usada na negociação (1.000 × 5,00 = 5.000), o par se cancela exatamente —
 as contas de trading zeram numa moeda comum para essa troca específica.
-Qualquer resíduo que aparecer depois, se uma cotação *diferente* for usada
-pra convertê-las, é ganho/perda cambial real e observável — este kernel não
-calcula isso (ainda não há camada de relatório), mas o dado que ele guarda
-já é suficiente pra alguém calcular depois.
+
+Essa conversão é pra isso que serve o `ExchangeRate`: `base` de uma moeda
+valia (`quote`) de outra, numa `date` (ex. `ExchangeRate.of(Money.of(100_000,
+usd), Money.of(500_000, brl), hoje)` registra que US$1.000,00 valiam
+R$5.000,00 naquele dia). Mesma forma do `Price`, pelo mesmo motivo — uma
+razão não-reduzida entre dois `Money` já tipados, não um decimal que
+arredondaria duas vezes. `ExchangeRate.convert(Money)` é o que fecha o
+laço que `TRADING` deixa aberto: converter o saldo de `tradingUsd` por essa
+cotação reproduz exatamente o saldo de `tradingBrl`, pra essa troca
+específica (veja `ExchangeRateTest`). Qualquer resíduo que aparecer depois,
+se uma cotação *diferente* for usada pra converter os mesmos saldos, é
+ganho/perda cambial real e observável.
 
 ## `Ledger` é dono do registro de commodities e da construção idempotente do plano de contas
 
@@ -291,13 +343,18 @@ src/main/java/com/cornerstone/ledger/model/
   Commodity.java                 moeda ou ativo em que um Money/Quantity é denominado
   Money.java                     valor imutável, não-negativo + commodity
   Quantity.java                   contagem de unidades imutável, não-negativa, de uma commodity ASSET
+  Price.java                     cotação de valorização: units valiam este Money, numa data
+  ExchangeRate.java               cotação de valorização entre duas moedas, numa data
+  ReconciliationStatus.java       pendente/compensado/conciliado, rastreado por Posting no Ledger
   Account.java                   nó do plano de contas; dona dos invariantes da árvore
   Posting.java                   uma perna de débito ou crédito de um lançamento; Money + Quantity opcional
   JournalEntry.java               o agregado de partida dobrada; válido por construção
-  Ledger.java                     raiz do agregado: registro de commodities + plano de contas + lançamentos postados
-  LedgerException.java + 6 subclasses
+  Ledger.java                     raiz do agregado: registro de commodities + plano de contas + lançamentos postados + conciliação
+  LedgerException.java + 13 subclasses
 src/test/java/.../model/LedgerTest.java
-src/test/java/.../model/PosicaoTest.java
+src/test/java/.../model/PositionTest.java
+src/test/java/.../model/PriceTest.java
+src/test/java/.../model/ExchangeRateTest.java
 src/test/java/.../model/LedgerChartBuildingTest.java
 ```
 
