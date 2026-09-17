@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A standalone double-entry bookkeeping kernel: plain Java 25, a single Maven module, zero compile-time dependencies beyond the JDK (JUnit 5 for tests only). **No persistence, no HTTP, no fiscal engine** — a database layer is a separate future project built on top of the public types, so don't add JPA/JDBC or other dependencies here. `README.md` (with a pt-BR translation in `README.pt-BR.md`, keep both in sync) documents the reasoning behind every design decision; read the relevant section before changing a core invariant.
+A standalone double-entry bookkeeping kernel: plain Java 25, a single Maven module, zero compile-time dependencies beyond the JDK (JUnit 5 for tests only). **No persistence, no HTTP, no fiscal engine** — a database layer is a separate future project built on top of the public types, so don't add JPA/JDBC or other dependencies here. `README.md` (with a pt-BR translation in `README.pt-BR.md`, keep both in sync) documents the reasoning behind every design decision; read the relevant section before changing a core invariant. `MANIFESTO.md` (bilingual, ported from the `portfolio` repo) states the product's purpose and principles; its "O papel do kernel" section translates them into kernel terms.
 
 ## Commands
 
