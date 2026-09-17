@@ -72,6 +72,17 @@ public final class Posting {
             if (!quantity.commodity().equals(accountCommodity)) {
                 throw new CurrencyMismatchException(accountCommodity, quantity.commodity());
             }
+            if (amount.isZero() || quantity.isZero()) {
+                // An exchange always moves both sides: their ratio IS the rate. A zero side is a rate
+                // of 0 or infinity, and two zero-money legs balance each other at 0 == 0 while
+                // minting foreign currency out of nothing — the single-leg guard in
+                // JournalEntry.build() never sees them. Unlike a position (a split moves units with
+                // no money), a currency has no legitimate one-sided move inside another currency's
+                // entry: a USD-to-USD transfer is an entry in USD.
+                throw new IllegalArgumentException(
+                        "exchange leg on \"" + account.path() + "\" must move both the entry's currency and "
+                                + accountCommodity.code() + " (got " + amount + " and " + quantity + ")");
+            }
         } else { // ASSET: a position account.
             if (amount.commodity().kind() != CommodityKind.CURRENCY) {
                 throw new IllegalArgumentException(
