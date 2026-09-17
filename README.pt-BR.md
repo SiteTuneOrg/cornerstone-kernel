@@ -103,7 +103,9 @@ para como sua quantidade é exibida.
   (`Posting.debit(cashAccount, money, quantity)` lança
   `IllegalArgumentException` antes da construção). Uma conta em moeda lançada
   em OUTRA moeda é uma perna de câmbio e EXIGE `Quantity` na própria moeda
-  (veja `TRADING` abaixo). Uma conta do tipo ativo
+  (veja `TRADING` abaixo), com os DOIS lados diferentes de zero: a razão entre
+  eles é a taxa, e duas pernas de dinheiro zero fechariam em 0 == 0 criando
+  moeda estrangeira do nada. Uma conta do tipo ativo
   EXIGE uma `Quantity` compatível com sua própria commodity — omiti-la é
   recusado, nunca tratado silenciosamente como "sem mudança de posição",
   porque isso é exatamente o tipo de corrupção silenciosa que o `CLAUDE.md`

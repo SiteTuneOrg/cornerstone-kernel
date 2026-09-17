@@ -119,14 +119,29 @@ class ExchangeRateTest {
     }
 
     @Test
-    void aZeroMoneyExchangeLegCannotStandAloneAndMintCurrency() {
+    void aZeroMoneyExchangeLegIsRefusedSoItCannotMintCurrency() {
+        Ledger ledger = new Ledger();
+        Account broker = ledger.openRootAccount("broker-usd", "Broker USD", AccountNature.ASSET, USD);
+        Account savings = ledger.openRootAccount("savings-usd", "Savings USD", AccountNature.ASSET, USD);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> JournalEntry.builder("mint", LocalDate.of(2026, 1, 5), "free dollars", BRL)
+                        .debit(broker, Money.zero(BRL), Quantity.of(1_000_000, USD)),
+                "a lone zero-money leg");
+        JournalEntry.Builder twoLegs = JournalEntry.builder("mint2", LocalDate.of(2026, 1, 5), "free dollars", BRL)
+                .debit(broker, Money.of(1, BRL), Quantity.of(1, USD));
+        assertThrows(IllegalArgumentException.class,
+                () -> twoLegs.debit(savings, Money.zero(BRL), Quantity.of(500, USD)),
+                "a second zero-money leg would balance the first at 0 == 0");
+    }
+
+    @Test
+    void aZeroQuantityExchangeLegIsRefusedBecauseTheRateWouldBeUndefined() {
         Ledger ledger = new Ledger();
         Account broker = ledger.openRootAccount("broker-usd", "Broker USD", AccountNature.ASSET, USD);
 
-        assertThrows(InsufficientPostingsException.class,
-                () -> JournalEntry.builder("mint", LocalDate.of(2026, 1, 5), "free dollars", BRL)
-                        .debit(broker, Money.zero(BRL), Quantity.of(1_000_000, USD))
-                        .build());
+        assertThrows(IllegalArgumentException.class,
+                () -> Posting.debit(broker, Money.of(50_000, BRL), Quantity.zero(USD)));
     }
 
     @Test

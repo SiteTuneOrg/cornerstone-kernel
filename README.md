@@ -98,7 +98,9 @@ its quantity is displayed.
   outright (`Posting.debit(cashAccount, money, quantity)` throws
   `IllegalArgumentException` before construction). A currency account posted
   in ANOTHER currency is an exchange leg and REQUIRES a `Quantity` in its own
-  currency (see `TRADING` below). An asset-kind account
+  currency (see `TRADING` below), with BOTH sides non-zero: their ratio is the
+  rate, and two zero-money legs would otherwise balance at 0 == 0 while minting
+  foreign currency. An asset-kind account
   REQUIRES a `Quantity` matching its own commodity — omitting it is refused,
   never silently treated as "no position change", because that is exactly
   the kind of silent corruption this project's `CLAUDE.md` warns about
