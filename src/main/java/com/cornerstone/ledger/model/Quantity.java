@@ -3,12 +3,13 @@ package com.cornerstone.ledger.model;
 import java.util.Objects;
 
 /**
- * An immutable, non-negative count of units of an {@link Commodity} of kind
- * {@link CommodityKind#ASSET} — shares of PETR4, satoshis of Bitcoin. The
- * asset-side counterpart of {@link Money}: same non-negative-by-construction
- * shape (sign lives on {@link Posting#side()}), same {@code long} smallest-unit
- * representation, but denominated in the security itself rather than in a
- * currency.
+ * An immutable, non-negative count of units of a {@link Posting}'s account's
+ * own {@link Commodity} — shares of PETR4, satoshis of Bitcoin, or, on an
+ * exchange leg (a USD account posted in a BRL entry), cents of the foreign
+ * currency. The account-side counterpart of {@link Money}: same
+ * non-negative-by-construction shape (sign lives on {@link Posting#side()}),
+ * same {@code long} smallest-unit representation, but denominated in what the
+ * account holds rather than in the entry's currency.
  *
  * <p>Kept as a distinct type from {@link Money} — even though both are "a
  * non-negative long plus a commodity" — because they answer different
@@ -30,7 +31,6 @@ public final class Quantity implements Comparable<Quantity> {
             throw new IllegalArgumentException("Quantity does not allow a negative value: " + units);
         }
         Objects.requireNonNull(commodity, "commodity");
-        commodity.requireKind(CommodityKind.ASSET, "Quantity");
         this.units = units;
         this.commodity = commodity;
     }

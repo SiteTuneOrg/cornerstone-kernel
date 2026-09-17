@@ -66,7 +66,7 @@ Cada uma destas é uma bifurcação real de design, não uma escolha arbitrária
   `CommodityConflictException`, `AccountIdConflictException`,
   `ForeignAccountException`, `ForeignPostingException`,
   `DuplicateJournalEntryException`, `InsufficientPostingsException`,
-  `CyclicAccountException`) — cada uma carregando exatamente os dados
+  `CyclicAccountException`, `ArithmeticRangeException`) — cada uma carregando exatamente os dados
   necessários pra formatar sua própria mensagem, selada (`sealed`) para que
   um `switch` sobre elas seja exaustivo. Mantido honesto numa revisão do
   `Ledger`: um punhado de violações de invariante (registro de commodity
@@ -88,18 +88,22 @@ próprio campo de cotação, separado de uma configuração de precisão decimal
 para como sua quantidade é exibida.
 
 - **`Account.commodity()` é sobrecarregada de propósito.** Para uma conta de
-  caixa é uma moeda (BRL, USD) e todo `Posting` contra ela carrega `Money`
-  naquela mesma moeda — o dinheiro É a posição ali. Para uma conta de
+  caixa é uma moeda (BRL, USD); um `Posting` contra ela nessa mesma moeda
+  carrega só `Money` — o dinheiro É a posição ali (um posting de um
+  lançamento em outra moeda é uma perna de câmbio, veja `TRADING` abaixo). Para uma conta de
   posição em corretora é o próprio ATIVO
   (`Commodity.asset("PETR4", 1)`): `Money` num posting assim é o
   custo/proventos na moeda em que a negociação aconteceu (que NÃO precisa
   ser a mesma commodity da conta), e uma nova `Quantity` — a contraparte de
   `Money` do lado do ativo, com a mesma forma de não-negativo-por-construção
   — carrega a mudança real de unidades, na commodity do próprio ativo.
-- **`Posting` reforça qual forma se aplica, checando `account.commodity().kind()`.**
-  Uma conta do tipo moeda aceita `Money` naquela moeda e RECUSA `Quantity`
-  totalmente (`Posting.debit(cashAccount, money, quantity)` lança
-  `IllegalArgumentException` antes da construção). Uma conta do tipo ativo
+- **`Posting` reforça qual forma se aplica: há `Quantity` exatamente quando a
+  commodity da conta difere da do dinheiro.** Uma conta em moeda lançada na
+  própria moeda aceita `Money` e RECUSA `Quantity` totalmente
+  (`Posting.debit(cashAccount, money, quantity)` lança
+  `IllegalArgumentException` antes da construção). Uma conta em moeda lançada
+  em OUTRA moeda é uma perna de câmbio e EXIGE `Quantity` na própria moeda
+  (veja `TRADING` abaixo). Uma conta do tipo ativo
   EXIGE uma `Quantity` compatível com sua própria commodity — omiti-la é
   recusado, nunca tratado silenciosamente como "sem mudança de posição",
   porque isso é exatamente o tipo de corrupção silenciosa que o `CLAUDE.md`
@@ -113,7 +117,9 @@ para como sua quantidade é exibida.
   move unidades SEM nenhum dinheiro — não há uma segunda perna pra balancear
   contra, porque nada de valor monetário mudou em lugar nenhum.
   `JournalEntry.Builder.build()` permite exatamente um posting quando ele é
-  `Money.zero(...)` mais uma `Quantity` diferente de zero — a própria guarda
+  numa conta de posição (tipo ativo) com `Money.zero(...)` mais uma
+  `Quantity` diferente de zero — nunca numa conta de caixa, onde uma perna
+  de câmbio sozinha com dinheiro zero criaria moeda do nada. A própria guarda
   do `Posting` de "amount E quantity ambos zero" já elimina o caso
   degenerado de um posting que de fato não faz nada, então admitir um único
   posting aqui não reabre esse buraco.
@@ -207,59 +213,45 @@ qualquer outra divisão neste kernel.
 
 ## `TRADING`: movendo dinheiro entre duas moedas diferentes
 
-`JournalEntry` fixa uma `Commodity` para o lançamento inteiro — todo
-`Posting` nele precisa estar naquela mesma moeda (`Builder.posting()` checa
-isso antes de adicionar um). Isso é deliberado (veja o papel de
-`CurrencyMismatchException` em outro lugar deste documento), mas significa
-que um único `JournalEntry` não consegue expressar "R$5.000 saem de uma
-conta em BRL, US$1.000 chegam numa conta em USD" — não há uma moeda única
-que as duas pernas possam compartilhar.
+`JournalEntry` fixa uma moeda para o lançamento inteiro: o `Money` de todo
+`Posting` está nela (`Builder.posting()` checa isso). Um câmbio continua
+sendo UM lançamento, do jeito que o GnuCash registra: a perna da conta na
+outra moeda carrega o `Money` do lançamento (quanto custou) e uma `Quantity`
+na moeda da própria conta (quanto chegou). A razão entre os dois é a
+cotação usada, então a cotação faz parte do próprio fato, e não fica ao lado.
 
-`AccountType.TRADING` (`AccountNature.ASSET`, sem `Quantity`) existe para
-transformar isso num *par* de lançamentos de moeda única, ligados por uma
-conta técnica por moeda — um padrão às vezes chamado de Trading Account.
-Um câmbio de uma conta corrente em BRL para uma conta de corretora em USD,
-a R$5,00/US$1,00:
+Opcionalmente, e exatamente como a opção "Use Trading Accounts" do GnuCash,
+contas `AccountType.TRADING` (uma por moeda) acrescentam as pernas que fazem
+CADA moeda fechar em zero dentro do lançamento. US$1.000,00 comprados a R$5,25:
 
 ```java
-Account tradingBrl = ledger.openAccount("trading-brl", "Câmbio BRL", brl, trading);
-Account tradingUsd = ledger.openAccount("trading-usd", "Câmbio USD", usd, trading);
+Account tradingBrl = ledger.openAccount("trading-brl", "BRL", brl, trading);
+Account tradingUsd = ledger.openAccount("trading-usd", "USD", usd, trading);
 tradingBrl.setType(AccountType.TRADING);
 tradingUsd.setType(AccountType.TRADING);
 
-// lançamento 1 — só a perna BRL
-JournalEntry.builder("cambio-1", hoje, "Câmbio BRL→USD (saída)", brl)
-    .credit(nubankCC, Money.of(500000, brl))
-    .debit(tradingBrl, Money.of(500000, brl))
-    .build();
-
-// lançamento 2 — só a perna USD
-JournalEntry.builder("cambio-2", hoje, "Câmbio BRL→USD (entrada)", usd)
-    .credit(tradingUsd, Money.of(100000, usd))
-    .debit(nomadInvest, Money.of(100000, usd))
+JournalEntry.builder("cambio", hoje, "Câmbio BRL→USD", brl)
+    .debit(nomadInvest, Money.of(525000, brl), Quantity.of(100000, usd))   // chegam US$1.000
+    .credit(tradingUsd, Money.of(525000, brl), Quantity.of(100000, usd))   // ...saem do trading USD
+    .debit(tradingBrl, Money.of(525000, brl))                              // entram R$5.250 no trading BRL
+    .credit(nubankCC, Money.of(525000, brl))                               // ...saem da conta corrente
     .build();
 ```
 
-Nenhuma mudança estrutural foi necessária pra suportar isso —
-`Ledger.balanceOf()` já documenta que um saldo negativo (um crédito numa
-conta cujo lado normal é débito) é um estado legítimo e reportável, não um
-erro. É exatamente isso que `tradingUsd` acaba tendo aqui: +R$5.000 em
-`tradingBrl`, −US$1.000 em `tradingUsd`. Convertidos pela MESMA cotação
-usada na negociação (1.000 × 5,00 = 5.000), o par se cancela exatamente —
-as contas de trading zeram numa moeda comum para essa troca específica.
+`Ledger.balanceOf` soma o `Money` de cada posting, na moeda do seu
+lançamento, então numa conta lançada em várias moedas ele as mistura.
+`Ledger.unitsOf` é o saldo na commodity DA PRÓPRIA conta: `Money` nos
+postings na própria moeda, `Quantity` nas pernas de câmbio. Aqui
+`unitsOf(nomadInvest)` é US$1.000,00, `unitsOf(tradingUsd)` −US$1.000,00 e
+`unitsOf(tradingBrl)` +R$5.250,00 (veja `ExchangeRateTest`).
 
-Essa conversão é pra isso que serve o `ExchangeRate`: `base` de uma moeda
-valia (`quote`) de outra, numa `date` (ex. `ExchangeRate.of(Money.of(100_000,
-usd), Money.of(500_000, brl), hoje)` registra que US$1.000,00 valiam
-R$5.000,00 naquele dia). Mesma forma do `Price`, pelo mesmo motivo — uma
-razão não-reduzida entre dois `Money` já tipados, não um decimal que
-arredondaria duas vezes. `ExchangeRate.convert(Money)` é o que fecha o
-laço que `TRADING` deixa aberto: converter o saldo de `tradingUsd` por essa
-cotação reproduz exatamente o saldo de `tradingBrl`, pra essa troca
-específica (veja `ExchangeRateTest`). Qualquer resíduo que aparecer depois,
-se uma cotação *diferente* for usada pra converter os mesmos saldos, é
+Um par de lançamentos de moeda única ligados pelas contas de trading (um em
+BRL, outro em USD) também continua funcionando. Essa forma não guarda
+cotação no livro: é o `ExchangeRate` (`base` de uma moeda valia `quote` de
+outra, numa `date`, razão não reduzida entre dois `Money`, como o `Price`) que
+converte o saldo de `tradingUsd` de volta para BRL. Qualquer resíduo que
+aparecer quando uma cotação *diferente* converter os mesmos saldos é
 ganho/perda cambial real e observável.
-
 ## `Ledger` é dono do registro de commodities e da construção idempotente do plano de contas
 
 Adicionado quando um importador real começou a construir um plano de contas
@@ -342,7 +334,7 @@ src/main/java/com/cornerstone/ledger/model/
   AccountType.java              espécies de conta → natureza
   Commodity.java                 moeda ou ativo em que um Money/Quantity é denominado
   Money.java                     valor imutável, não-negativo + commodity
-  Quantity.java                   contagem de unidades imutável, não-negativa, de uma commodity ASSET
+  Quantity.java                   contagem de unidades imutável, não-negativa, na commodity da própria conta
   Price.java                     cotação de valorização: units valiam este Money, numa data
   ExchangeRate.java               cotação de valorização entre duas moedas, numa data
   ReconciliationStatus.java       pendente/compensado/conciliado, rastreado por Posting no Ledger
@@ -350,12 +342,14 @@ src/main/java/com/cornerstone/ledger/model/
   Posting.java                   uma perna de débito ou crédito de um lançamento; Money + Quantity opcional
   JournalEntry.java               o agregado de partida dobrada; válido por construção
   Ledger.java                     raiz do agregado: registro de commodities + plano de contas + lançamentos postados + conciliação
-  LedgerException.java + 13 subclasses
+  LedgerArithmetic.java          mulDiv (trunc/floor/round) e rateio por maior resto, exatos
+  LedgerException.java + 14 subclasses (ArithmeticRangeException carrega a falha como dado)
 src/test/java/.../model/LedgerTest.java
 src/test/java/.../model/PositionTest.java
 src/test/java/.../model/PriceTest.java
 src/test/java/.../model/ExchangeRateTest.java
 src/test/java/.../model/LedgerChartBuildingTest.java
+src/test/java/.../model/LedgerArithmeticTest.java
 ```
 
 Rode assim: `mvn test` (precisa de um JDK 25 no `PATH`, ou aponte o

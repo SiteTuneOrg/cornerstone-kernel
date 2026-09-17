@@ -10,11 +10,11 @@ import java.util.Objects;
  * ratio of two already-typed {@link Money} values, not a decimal rate that
  * would round twice.
  *
- * <p>This is what closes the loop the {@code TRADING} account pattern
- * leaves open: two single-currency {@link JournalEntry} legs, bridged by a
- * pair of technical accounts, balance structurally on their own, but the
- * realized gain or loss when those balances are later compared needs an
- * explicit rate — nothing about the entries themselves records one.
+ * <p>An exchange recorded as ONE entry with a foreign leg (see {@link Posting})
+ * already carries its rate in that leg's money/quantity ratio. This type is
+ * for the other shape: two single-currency {@link JournalEntry} legs bridged
+ * by {@code TRADING} accounts, which balance structurally on their own but
+ * record no rate, so comparing those balances later needs an explicit one.
  */
 public final class ExchangeRate {
 
@@ -64,7 +64,7 @@ public final class ExchangeRate {
         if (!amount.commodity().equals(base.commodity())) {
             throw new CurrencyMismatchException(base.commodity(), amount.commodity());
         }
-        long converted = Math.multiplyExact(amount.amount(), quote.amount()) / base.amount();
+        long converted = LedgerArithmetic.mulDiv(amount.amount(), quote.amount(), base.amount(), LedgerArithmetic.Rounding.TRUNC);
         return Money.of(converted, quote.commodity());
     }
 

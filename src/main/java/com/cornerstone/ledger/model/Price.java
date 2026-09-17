@@ -62,7 +62,7 @@ public final class Price {
         if (!quantity.commodity().equals(units.commodity())) {
             throw new CurrencyMismatchException(units.commodity(), quantity.commodity());
         }
-        long amount = Math.multiplyExact(quantity.units(), worth.amount()) / units.units();
+        long amount = LedgerArithmetic.mulDiv(quantity.units(), worth.amount(), units.units(), LedgerArithmetic.Rounding.TRUNC);
         return Money.of(amount, worth.commodity());
     }
 

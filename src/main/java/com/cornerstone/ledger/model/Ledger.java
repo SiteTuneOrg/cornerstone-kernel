@@ -280,6 +280,10 @@ public final class Ledger {
      * {@link Account#equals} is id-based, so without this check a foreign
      * account whose id happens to collide with one of this ledger's own
      * would silently read this ledger's real balance for that id.
+     *
+     * <p>Each posting counts its {@link Money}, in its entry's currency. For an
+     * account posted from entries in more than one currency (an exchange
+     * leg), that sum mixes currencies: read {@link #unitsOf} instead.
      */
     public long balanceOf(Account account) {
         requireOwnedByThisLedger(account);
@@ -294,24 +298,40 @@ public final class Ledger {
 
     /**
      * Signed unit count of a position account: how many units of
-     * {@code account.commodity()} are currently held. Empty for a non-position
-     * account (its postings never carry a {@link Quantity} — see
-     * {@link Posting}), so a caller cannot mistake "never traded" for
-     * "confirmed zero position". Refuses an {@code account} not owned by
-     * this ledger, same reason as {@link #balanceOf}.
+     * {@code account.commodity()} are currently held. Empty for a cash
+     * account (use {@link #unitsOf} for the amount of its currency it holds),
+     * so a caller cannot mistake "never traded" for "confirmed zero
+     * position". Refuses an {@code account} not owned by this ledger, same
+     * reason as {@link #balanceOf}.
      */
     public OptionalLong quantityOf(Account account) {
         requireOwnedByThisLedger(account);
         if (account.commodity().kind() != CommodityKind.ASSET) {
             return OptionalLong.empty();
         }
+        // Every posting on a position account carries a Quantity, so its units are its quantity.
+        return OptionalLong.of(unitsOf(account));
+    }
+
+    /**
+     * Signed balance of {@code account} in its OWN commodity: units for a
+     * position account, and for a cash account the amount of its currency it
+     * holds — its own-currency postings count their {@link Money}, and its
+     * postings from entries in another currency (exchange legs, see
+     * {@link Posting}) count their {@link Quantity}. Unlike {@link #balanceOf},
+     * which adds each posting's money in its entry's currency, this never
+     * mixes two currencies. Refuses an {@code account} not owned by this
+     * ledger, same reason as {@link #balanceOf}.
+     */
+    public long unitsOf(Account account) {
+        requireOwnedByThisLedger(account);
         long total = 0;
         for (JournalEntry entry : entriesById.values()) {
             for (Posting posting : entry.postingsFor(account)) {
-                total = Math.addExact(total, posting.signedQuantity().orElse(0));
+                total = Math.addExact(total, posting.signedQuantity().orElseGet(posting::signedAmount));
             }
         }
-        return OptionalLong.of(total);
+        return total;
     }
 
     /**

@@ -36,8 +36,8 @@ public record Commodity(String code, long scale, CommodityKind kind) {
 
     /**
      * Throws {@link IllegalArgumentException} if this commodity isn't
-     * {@code expected}'s kind — the same "wrong kind" check {@link Quantity},
-     * {@link Price} and {@link ExchangeRate} each need on construction,
+     * {@code expected}'s kind — the same "wrong kind" check {@link Price}
+     * and {@link ExchangeRate} each need on construction,
      * pulled out so the message and the check stay in one place.
      */
     void requireKind(CommodityKind expected, String context) {

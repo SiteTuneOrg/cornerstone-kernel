@@ -124,7 +124,7 @@ public final class JournalEntry {
             return posting(Posting.credit(account, amount, memo));
         }
 
-        /** For a position account: {@code amount} is cost/proceeds in this entry's currency, {@code quantity} the unit change. */
+        /** For a position account or an exchange leg: {@code amount} is the value in this entry's currency, {@code quantity} the change in the account's own commodity. */
         public Builder debit(Account account, Money amount, Quantity quantity) {
             return posting(Posting.debit(account, amount, quantity));
         }
@@ -168,7 +168,10 @@ public final class JournalEntry {
          * happened" case, so admitting exactly one posting here is safe.
          */
         public JournalEntry build() {
+            // Only a position account: a zero-money exchange leg on a cash
+            // account would otherwise mint currency with no counter-leg.
             boolean standaloneQuantityAdjustment = postings.size() == 1
+                    && postings.get(0).account().commodity().kind() == CommodityKind.ASSET
                     && postings.get(0).amount().isZero()
                     && postings.get(0).quantity().isPresent();
             if (postings.size() < 2 && !standaloneQuantityAdjustment) {

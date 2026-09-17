@@ -6,7 +6,7 @@ import java.util.OptionalLong;
 
 /**
  * One leg of a {@link JournalEntry}: a debit or credit of {@link #amount()}
- * — and, for a position account, a {@link #quantity()} — against
+ * — and, for a position account or an exchange leg, a {@link #quantity()} — against
  * {@link #account()}.
  *
  * <p>A {@code Posting} carries an unsigned {@link Money} plus an explicit
@@ -16,15 +16,24 @@ import java.util.OptionalLong;
  * running balance).
  *
  * <p><b>An account's own {@link Account#commodity()} is what it holds a
- * position IN, not what its money is denominated in.</b> A cash account's
- * commodity is a currency (BRL, USD) and every {@code Posting} against it
- * carries {@code Money} in that same currency, no {@link Quantity} — money
- * IS the position there. A brokerage position account's commodity is the
- * SECURITY itself (PETR4, BTC): {@code Money} on such a posting is the
- * cost/proceeds in whatever currency the trade happened in (which need NOT
- * be the account's own commodity), and {@link #quantity()} — mandatory,
- * never silently defaulted — is the actual change in units held, in that
- * security's own commodity.
+ * position IN, not what its money is denominated in.</b> {@code Money} on a
+ * posting is always in the entry's currency; {@link #quantity()} is the
+ * change in the account's own commodity, and it is present exactly when
+ * those two differ:
+ *
+ * <ul>
+ *   <li>A cash account posted in its own currency (BRL account, BRL entry):
+ *       money IS the position, so there is no {@link Quantity}.
+ *   <li>A cash account posted in another currency (USD account, BRL entry —
+ *       an exchange, GnuCash style, optionally with {@link AccountType#TRADING}
+ *       legs): {@code Money} is the BRL value and the mandatory {@link Quantity}
+ *       is the USD amount; their ratio is the rate the exchange used.
+ *   <li>A brokerage position account (PETR4, BTC): {@code Money} is the
+ *       cost/proceeds and the mandatory {@link Quantity} is the change in
+ *       units held.
+ * </ul>
+ *
+ * A mandatory quantity is never silently defaulted.
  */
 public final class Posting {
 
@@ -42,20 +51,26 @@ public final class Posting {
         this.memo = memo;
 
         Commodity accountCommodity = account.commodity();
-        if (accountCommodity.kind() == CommodityKind.CURRENCY) {
-            if (!accountCommodity.equals(amount.commodity())) {
-                // Catches the mistake a multi-currency importer will
-                // otherwise make silently: posting a USD amount to a
-                // BRL-denominated cash account produces a JournalEntry that
-                // still balances (the entry's OWN currency check only
-                // compares postings to each other, never to the accounts
-                // they touch) but corrupts that account's balance the
-                // moment it's read back.
-                throw new CurrencyMismatchException(accountCommodity, amount.commodity());
-            }
+        if (accountCommodity.kind() == CommodityKind.CURRENCY && accountCommodity.equals(amount.commodity())) {
             if (quantity != null) {
                 throw new IllegalArgumentException(
-                        "account \"" + account.path() + "\" is denominated in a currency — does not hold a position, does not accept Quantity");
+                        "account \"" + account.path() + "\" is posted in its own currency — money is the position, it does not accept a Quantity");
+            }
+        } else if (accountCommodity.kind() == CommodityKind.CURRENCY) { // posted in another currency: an exchange leg
+            if (amount.commodity().kind() != CommodityKind.CURRENCY) {
+                throw new CurrencyMismatchException(accountCommodity, amount.commodity());
+            }
+            if (quantity == null) {
+                // Catches the mistake a multi-currency importer will
+                // otherwise make silently: posting a USD amount to a
+                // BRL-denominated cash account with nothing saying how much
+                // BRL actually moved. The entry still balances (its OWN
+                // currency check only compares postings to each other) but
+                // the account's balance in its own currency would be unknown.
+                throw new CurrencyMismatchException(accountCommodity, amount.commodity());
+            }
+            if (!quantity.commodity().equals(accountCommodity)) {
+                throw new CurrencyMismatchException(accountCommodity, quantity.commodity());
             }
         } else { // ASSET: a position account.
             if (amount.commodity().kind() != CommodityKind.CURRENCY) {
@@ -131,7 +146,7 @@ public final class Posting {
         return amount;
     }
 
-    /** Present iff {@code account().commodity().kind() == ASSET} — see the class doc. */
+    /** Present iff the account's commodity differs from {@link #amount()}'s — a position or an exchange leg; see the class doc. */
     public Optional<Quantity> quantity() {
         return Optional.ofNullable(quantity);
     }
@@ -145,7 +160,7 @@ public final class Posting {
         return (long) account.nature().signFor(side) * amount.amount();
     }
 
-    /** This posting's effect on {@link #account()}'s unit count, signed by its own nature — empty for a non-position account. */
+    /** This posting's effect on {@link #account()}'s unit count, signed by its own nature — empty when {@link #quantity()} is. */
     public OptionalLong signedQuantity() {
         return quantity == null
                 ? OptionalLong.empty()

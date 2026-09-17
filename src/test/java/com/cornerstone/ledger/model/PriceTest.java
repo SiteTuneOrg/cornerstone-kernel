@@ -47,6 +47,14 @@ class PriceTest {
     }
 
     @Test
+    void valueOfDoesNotOverflowOnTheIntermediateProduct() {
+        Commodity btc = Commodity.asset("BTC", 100_000_000);
+        // 1 BTC was worth R$600,000.00; value 2,000 BTC (quantity × worth exceeds a long).
+        Price quote = Price.of(Quantity.of(100_000_000, btc), Money.of(60_000_000, BRL), LocalDate.now());
+        assertEquals(Money.of(120_000_000_000L, BRL), quote.valueOf(Quantity.of(200_000_000_000L, btc)));
+    }
+
+    @Test
     void refusesAQuoteWhoseWorthIsNotACurrency() {
         Commodity hgtx3 = Commodity.asset("HGTX3", 1);
         assertThrows(IllegalArgumentException.class,
