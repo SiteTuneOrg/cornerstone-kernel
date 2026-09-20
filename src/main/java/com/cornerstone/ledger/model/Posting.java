@@ -25,7 +25,7 @@ import java.util.OptionalLong;
  *   <li>A cash account posted in its own currency (BRL account, BRL entry):
  *       money IS the position, so there is no {@link Quantity}.
  *   <li>A cash account posted in another currency (USD account, BRL entry —
- *       an exchange, GnuCash style, optionally with {@link AccountType#TRADING}
+ *       an exchange in one entry, optionally with {@link AccountType#TRADING}
  *       legs): {@code Money} is the BRL value and the mandatory {@link Quantity}
  *       is the USD amount; their ratio is the rate the exchange used.
  *   <li>A brokerage position account (PETR4, BTC): {@code Money} is the

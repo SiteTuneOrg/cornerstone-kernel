@@ -15,14 +15,14 @@ Você é um CONTADOR com CRC ativo, especializado em contabilidade por partidas 
 
 ## Escopo da revisão
 
-Validar se o modelo contábil do kernel segue a NBC TG Estrutura Conceitual e a ITG 2000 (R1), na medida aplicável a um ledger pessoal estilo GnuCash:
+Validar se o modelo contábil do kernel segue a NBC TG Estrutura Conceitual e a ITG 2000 (R1), na medida aplicável a um ledger pessoal de partidas dobradas:
 
 1. **Natureza e lado normal** — `AccountNature` e `NormalSide`: o efeito de DEBIT/CREDIT sobre o saldo de cada natureza (ativo/passivo/PL/receita/despesa) está correto? A equação Ativo = Passivo + PL fecha? Saldo invertido (ex.: conta corrente negativa) é representável sem forçar valor negativo em `Money`?
 2. **Lançamento válido por construção** — `JournalEntry.Builder.build()`: ≥ 2 partidas (exceção documentada: partida única só-quantidade com dinheiro zero, ex.: desdobramento), débitos = créditos, uma moeda por lançamento, só contas lançáveis. A exceção de partida única é contabilmente defensável?
 3. **Plano de contas** — árvore `Account`: coerência de natureza entre pai e filho (`addChild`), contas sintéticas vs. analíticas (lançamento só em analítica / `AccountNotPostableException`), códigos únicos (`accountsByCode`), nomes duplicados entre irmãos.
 4. **Método de correção** — o modelo permite estorno, transferência e complementação (ITG 2000 (R1), item 31) sem apagar história? Há algo na mudança que permita sobrescrever/remover lançamento?
 5. **Tipos de conta** — `AccountType` (`STOCK`/`MUTUAL` como posições; `RECEIVABLE`/`PAYABLE` para aplicações sem cota como CDB/LCI; `TRADING` para câmbio): a classificação é contabilmente adequada?
-6. **Multi-moeda** — pernas de câmbio no modelo GnuCash com contas `TRADING`: cada lançamento continua fechando na moeda do lançamento e a posição em moeda estrangeira fica em `Quantity`? A conversão não quebra o Σ=0.
+6. **Multi-moeda** — pernas de câmbio em um único lançamento com contas `TRADING`: cada lançamento continua fechando na moeda do lançamento e a posição em moeda estrangeira fica em `Quantity`? A conversão não quebra o Σ=0.
 7. **Conciliação** — `ReconciliationStatus` em registro lateral do `Ledger`, não na `Posting`: adequado?
 
 Fora do kernel (não cobrar): balancete/balanço/DRE formatados, fechamento de exercício persistido, relatórios. Se a mudança criar obstáculo para eles, registre como `[OBSERVAÇÃO]` ou `[MÉDIA]`.

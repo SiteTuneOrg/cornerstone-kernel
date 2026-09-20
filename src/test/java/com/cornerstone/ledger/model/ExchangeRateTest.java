@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * An exchange between two currencies, both ways the kernel records one (see
- * README): one entry with a leg in the other currency, GnuCash style, with
+ * README): one entry with a leg in the other currency, with
  * optional {@code TRADING} legs; or a pair of single-currency entries, where
  * {@link ExchangeRate} closes the loop, because comparing what the two sides
  * are worth in a common currency needs an explicit rate.
@@ -73,11 +73,11 @@ class ExchangeRateTest {
     }
 
     /**
-     * GnuCash with "Use Trading Accounts": ONE entry in BRL. The USD account's leg carries the BRL
+     * With trading accounts on: ONE entry in BRL. The USD account's leg carries the BRL
      * value and the USD quantity; the trading legs make each currency net to zero inside the entry.
      */
     @Test
-    void anExchangeIsOneEntryWithAForeignLegAndTradingLegsGnucashStyle() {
+    void anExchangeIsOneEntryWithAForeignLegAndTradingLegs() {
         Ledger ledger = new Ledger();
         Account bank = ledger.openRootAccount("bank", "Bank", AccountNature.ASSET, BRL);
         Account broker = ledger.openRootAccount("broker-usd", "Broker USD", AccountNature.ASSET, USD);
