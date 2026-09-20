@@ -1,7 +1,8 @@
 package com.cornerstone.ledger.model;
 
 /**
- * Account species (GnuCash vocabulary), each carrying the {@link AccountNature}
+ * Account species, in the vocabulary the interchange formats use, each
+ * carrying the {@link AccountNature}
  * it implies. Several species collapse onto the same nature — that is the
  * whole reason this enum exists separately from {@code AccountNature}
  * instead of replacing it.

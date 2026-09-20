@@ -205,14 +205,14 @@ other division in this kernel.
 
 `JournalEntry` pins one currency for the whole entry: every `Posting`'s
 `Money` is in it (`Builder.posting()` checks this). An exchange is still ONE
-entry, the way GnuCash records it: the leg on the account in the other
+entry, never two: the leg on the account in the other
 currency carries the entry's `Money` (what it cost) and a `Quantity` in the
 account's own currency (what arrived). The ratio of the two is the rate the
 exchange used, so the rate lives in the fact itself, not beside it.
 
-Optionally, and exactly like GnuCash's "Use Trading Accounts" book option,
-`AccountType.TRADING` accounts (one per currency) add the legs that make
-EACH currency net to zero inside the entry. US$1.000,00 bought at R$5,25:
+Optionally, `AccountType.TRADING` accounts (one per currency) add the legs
+that make EACH currency net to zero inside the entry — the book-wide option
+an interchange format calls trading accounts. US$1.000,00 bought at R$5,25:
 
 ```java
 Account tradingBrl = ledger.openAccount("trading-brl", "BRL", brl, trading);

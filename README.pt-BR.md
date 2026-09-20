@@ -217,14 +217,14 @@ qualquer outra divisão neste kernel.
 
 `JournalEntry` fixa uma moeda para o lançamento inteiro: o `Money` de todo
 `Posting` está nela (`Builder.posting()` checa isso). Um câmbio continua
-sendo UM lançamento, do jeito que o GnuCash registra: a perna da conta na
+sendo UM lançamento, nunca dois: a perna da conta na
 outra moeda carrega o `Money` do lançamento (quanto custou) e uma `Quantity`
 na moeda da própria conta (quanto chegou). A razão entre os dois é a
 cotação usada, então a cotação faz parte do próprio fato, e não fica ao lado.
 
-Opcionalmente, e exatamente como a opção "Use Trading Accounts" do GnuCash,
-contas `AccountType.TRADING` (uma por moeda) acrescentam as pernas que fazem
-CADA moeda fechar em zero dentro do lançamento. US$1.000,00 comprados a R$5,25:
+Opcionalmente, contas `AccountType.TRADING` (uma por moeda) acrescentam as
+pernas que fazem CADA moeda fechar em zero dentro do lançamento — a opção de
+livro que um formato de intercâmbio chama de contas de negociação. US$1.000,00 comprados a R$5,25:
 
 ```java
 Account tradingBrl = ledger.openAccount("trading-brl", "BRL", brl, trading);
