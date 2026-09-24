@@ -19,14 +19,20 @@ jobs:
     name: Tests + coverage gate
     # Self-hosted runners (GitHub-hosted minutes are not available to this org).
     runs-on: [self-hosted, linux]
+    # One runner serves all three repositories; a hung job would hold the others
+    # for GitHub's default of six hours.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
+      # No `cache: maven`: ~/.m2 lives in the runner's $HOME and survives between
+      # jobs, so the action would only round-trip it through the cache service.
+      # That was the slowest step of the run and once timed a whole job out.
+      # cornerstone-app skips `cache: npm` for the same reason.
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
-          cache: maven
 
       # Same gate as .githooks/pre-commit: tests + JaCoCo check (>= 80% line coverage).
       - name: Verify
