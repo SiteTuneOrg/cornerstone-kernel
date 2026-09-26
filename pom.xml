@@ -16,6 +16,20 @@
   </properties>
 
   <!--
+    Published to GitHub Packages (SPEC_RELEASE D9 in cornerstone-app): the server depends on a
+    released version instead of building this repository's main, so a commit here no longer changes
+    the server's build behind its back. `.github/workflows/publish.yml` deploys on a tag vX.Y.Z whose
+    number is this pom's version. That workflow is applied by the owner (SPEC_RELEASE D10) and is NOT
+    in this repository until then: a tag pushed before it lands publishes nothing.
+  -->
+  <distributionManagement>
+    <repository>
+      <id>github</id>
+      <url>https://maven.pkg.github.com/SiteTuneOrg/cornerstone-kernel</url>
+    </repository>
+  </distributionManagement>
+
+  <!--
     This is the kernel only: the double-entry object model, no persistence.
     Zero compile-time dependencies beyond the JDK. A database-backed module
     (JDBC, an ORM, whatever) is a separate future project layered on top of
