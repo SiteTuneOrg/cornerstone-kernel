@@ -365,10 +365,6 @@ no `pom.xml`, mergeie e empurre a tag `vX.Y.Z` com o mesmo número. O workflow d
 gate de cobertura e publica; uma tag que não bate com o pom falha antes de publicar qualquer coisa.
 Uma versão já publicada não pode ser publicada de novo, então uma correção é um PATCH novo.
 
-**Pendente:** esse workflow (`.github/workflows/publish.yml`) é aplicado pelo dono, porque a automação
-deste repositório não consegue empurrar arquivos de workflow. Enquanto ele não estiver na `main`, uma tag
-não publica nada e nada a confere contra o pom.
-
 Ler o pacote pede credencial mesmo dentro da organização: um server `github` no
 `~/.m2/settings.xml` com um token clássico com `read:packages`, ou um `mvn install` deste
 repositório, que é o que o build local do server sempre fez.
