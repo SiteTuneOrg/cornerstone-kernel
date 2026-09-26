@@ -349,6 +349,10 @@ The kernel keeps its own SemVer and is published to GitHub Packages
 coverage gate and deploys; a tag that does not match the pom fails before anything is published.
 A version already published cannot be published again, so a fix is a new PATCH.
 
+**Pending:** that workflow (`.github/workflows/publish.yml`) is applied by the owner, because this
+repository's automation cannot push workflow files. Until it is in `main`, a tag publishes nothing
+and nothing checks it against the pom.
+
 Reading the package needs credentials even inside the organization: a `github` server in
 `~/.m2/settings.xml` with a classic token that has `read:packages`, or `mvn install` of this
 repository, which is what a local build of the server has always done.
