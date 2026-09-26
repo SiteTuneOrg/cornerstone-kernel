@@ -357,6 +357,18 @@ src/test/java/.../model/LedgerArithmeticTest.java
 Rode assim: `mvn test` (precisa de um JDK 25 no `PATH`, ou aponte o
 toolchain do Maven para um).
 
+## Publicando uma versão
+
+O kernel tem SemVer próprio e é publicado no GitHub Packages
+(`https://maven.pkg.github.com/SiteTuneOrg/cornerstone-kernel`). Para publicar: suba o `<version>`
+no `pom.xml`, mergeie e empurre a tag `vX.Y.Z` com o mesmo número. O workflow de publicação roda o
+gate de cobertura e publica; uma tag que não bate com o pom falha antes de publicar qualquer coisa.
+Uma versão já publicada não pode ser publicada de novo, então uma correção é um PATCH novo.
+
+Ler o pacote pede credencial mesmo dentro da organização: um server `github` no
+`~/.m2/settings.xml` com um token clássico com `read:packages`, ou um `mvn install` deste
+repositório, que é o que o build local do server sempre fez.
+
 ## O que fica deliberadamente de fora
 
 - **Sem banco de dados.** Explicitamente fora de escopo por direção do

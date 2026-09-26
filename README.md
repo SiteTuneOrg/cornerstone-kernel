@@ -341,6 +341,18 @@ src/test/java/.../model/LedgerArithmeticTest.java
 
 Run it: `mvn test` (needs a JDK 25 on `PATH`, or point Maven's toolchain at one).
 
+## Releasing
+
+The kernel keeps its own SemVer and is published to GitHub Packages
+(`https://maven.pkg.github.com/SiteTuneOrg/cornerstone-kernel`). To release: bump `<version>` in
+`pom.xml`, merge, and push the tag `vX.Y.Z` with that same number. The publish workflow runs the
+coverage gate and deploys; a tag that does not match the pom fails before anything is published.
+A version already published cannot be published again, so a fix is a new PATCH.
+
+Reading the package needs credentials even inside the organization: a `github` server in
+`~/.m2/settings.xml` with a classic token that has `read:packages`, or `mvn install` of this
+repository, which is what a local build of the server has always done.
+
 ## What this deliberately leaves out
 
 - **No database.** Explicitly out of scope per the user's direction on this
