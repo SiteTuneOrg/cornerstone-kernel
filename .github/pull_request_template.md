@@ -8,6 +8,6 @@
 
 ## Checklist
 
-- [ ] The repository's gate passes locally (`./mvnw verify`, see `CLAUDE.md`).
+- [ ] The repository's gate passes locally (`./mvnw verify`).
 - [ ] A new failure mode is a new `LedgerException` subclass, listed in `permits`, the Javadoc and both READMEs.
 - [ ] `README.md` and `README.pt-BR.md` stay in sync.
