@@ -1,0 +1,33 @@
+# The same verify as ci.yml, from an EMPTY Maven home: ~/.m2 survives between jobs on the
+# self-hosted runner, so ci.yml never proves that the wrapper's checksum and the plugins still
+# download from scratch. Weekly and on demand, so it costs the shared runner one run a week.
+name: Clean build
+
+on:
+  schedule:
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Verify from an empty Maven home
+        run: ./mvnw -B -ntp verify -Dmaven.repo.local="$RUNNER_TEMP/m2/repository"
+        env:
+          MAVEN_USER_HOME: ${{ runner.temp }}/m2
+
+      - name: Drop the throwaway Maven home
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/m2"

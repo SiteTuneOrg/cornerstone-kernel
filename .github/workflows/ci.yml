@@ -38,10 +38,13 @@ jobs:
       - name: Verify
         run: ./mvnw -B -ntp verify
 
-      - name: Upload coverage report
+      - name: Upload coverage, mutation and SpotBugs reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: jacoco-report
-          path: target/site/jacoco/
+          name: reports
+          path: |
+            target/site/jacoco/
+            target/pit-reports/
+            target/spotbugsXml.xml
           if-no-files-found: ignore
