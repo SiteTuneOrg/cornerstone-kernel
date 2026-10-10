@@ -18,6 +18,12 @@ Use the Maven Wrapper (script-only distribution; needs JDK 25 on `PATH`):
 ./mvnw verify -Djacoco.haltOnFailure=false    # coverage report without failing (target/site/jacoco/)
 ```
 
+The wrapper checks the Maven it downloads against `distributionSha256Sum` in
+`.mvn/wrapper/maven-wrapper.properties`, which is the `-bin.zip`'s hash: a first download needs
+`unzip` (without it `mvnw` fetches the `.tar.gz` and the check fails) and `sha256sum` or `shasum`.
+A Maven already in `~/.m2/wrapper` is not checked again. Bump `distributionUrl` and the sum
+together, by hand (Dependabot ignores the wrapper).
+
 There is no linter/formatter configured.
 
 ## Commit gate
@@ -25,6 +31,10 @@ There is no linter/formatter configured.
 `.githooks/pre-commit` runs `./mvnw -q verify` whenever staged changes touch `src/`, so a commit fails if coverage drops below 80% (enable per clone with `git config core.hooksPath .githooks`). A Claude Code PreToolUse hook (`.claude/hooks/block-hook-bypass.sh`) blocks `git commit --no-verify`/`-n` and overriding `core.hooksPath` — fix coverage instead; if a bypass is really needed, ask the user to commit themselves. New code needs tests that keep the gate green.
 
 CI (`.github/workflows/ci.yml`) runs the same `./mvnw verify` gate on JDK 25 (Temurin) for pushes to `main` and every pull request, and uploads the JaCoCo report as an artifact. The pre-commit hook is opt-in per clone; CI is the gate that cannot be skipped.
+
+## Pull requests
+
+A pull request body follows `.github/pull_request_template.md` (Before/After/How plus its checklist), including one opened with `gh pr create --body` or an API call, which never sees the template on its own.
 
 ## Architecture
 

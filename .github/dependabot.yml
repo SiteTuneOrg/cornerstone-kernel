@@ -1,18 +1,29 @@
 # Version updates (security updates are enabled in the repository settings and need no file).
-# Monthly and grouped, so one PR a month per ecosystem instead of one per artifact.
+# Monthly, minor and patch only, grouped: one PR a month per ecosystem. A major (JUnit 6, a new
+# JaCoCo against Java 25) arrives as its own PR, so it never holds the patches back. The cooldown
+# keeps a version published days ago off the self-hosted runner.
 version: 2
 updates:
   - package-ecosystem: maven
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
+    ignore:
+      # The Maven wrapper is bumped by hand: distributionUrl and distributionSha256Sum change
+      # together, and a bump that moves one leaves every fresh build failing the checksum.
+      - dependency-name: "org.apache.maven:apache-maven"
+      - dependency-name: "org.apache.maven.wrapper:*"
     groups:
       maven:
-        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
