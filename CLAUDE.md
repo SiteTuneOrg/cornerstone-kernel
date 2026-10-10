@@ -14,7 +14,7 @@ Use the Maven Wrapper (script-only distribution; needs JDK 25 on `PATH`):
 ./mvnw test                                   # run all tests
 ./mvnw test -Dtest=LedgerTest                 # one test class
 ./mvnw test -Dtest=LedgerTest#methodName      # one test method
-./mvnw verify                                 # tests + JaCoCo coverage gate (>= 80% line coverage, bundle-wide)
+./mvnw verify                                 # tests + every gate below
 ./mvnw verify -Djacoco.haltOnFailure=false    # coverage report without failing (target/site/jacoco/)
 ```
 
@@ -24,11 +24,19 @@ The wrapper checks the Maven it downloads against `distributionSha256Sum` in
 A Maven already in `~/.m2/wrapper` is not checked again. Bump `distributionUrl` and the sum
 together, by hand (Dependabot ignores the wrapper).
 
+`verify` runs four gates, each failing the build:
+- **enforcer**: Maven 3.9+, JDK 25+, and no compile-scoped dependency (the kernel has none).
+- **SpotBugs + FindSecBugs** (effort Max, default threshold). A deliberate exception goes in
+  `spotbugs-exclude.xml` with its reason, never as a lower threshold.
+- **PIT** mutation score >= 80% (`mutationThreshold`; 82% measured on 2026-10-10, about a minute).
+  Report in `target/pit-reports/`. Raise the threshold as tests improve, never lower it to pass.
+- **JaCoCo** line coverage >= 80%, bundle-wide.
+
 There is no linter/formatter configured.
 
 ## Commit gate
 
-`.githooks/pre-commit` runs `./mvnw -q verify` whenever staged changes touch `src/`, so a commit fails if coverage drops below 80% (enable per clone with `git config core.hooksPath .githooks`). A Claude Code PreToolUse hook (`.claude/hooks/block-hook-bypass.sh`) blocks `git commit --no-verify`/`-n` and overriding `core.hooksPath` — fix coverage instead; if a bypass is really needed, ask the user to commit themselves. New code needs tests that keep the gate green.
+`.githooks/pre-commit` runs `./mvnw -q verify` whenever staged changes touch `src/`, so a commit fails on any of the gates above (enable per clone with `git config core.hooksPath .githooks`). A Claude Code PreToolUse hook (`.claude/hooks/block-hook-bypass.sh`) blocks `git commit --no-verify`/`-n` and overriding `core.hooksPath` — fix coverage instead; if a bypass is really needed, ask the user to commit themselves. New code needs tests that keep the gate green.
 
 CI (`.github/workflows/ci.yml`) runs the same `./mvnw verify` gate on JDK 25 (Temurin) for pushes to `main` and every pull request, and uploads the JaCoCo report as an artifact. The pre-commit hook is opt-in per clone; CI is the gate that cannot be skipped.
 

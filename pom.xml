@@ -13,6 +13,9 @@
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit.version>6.1.3</junit.version>
+    <spotbugs.version>4.10.4.1</spotbugs.version>
+    <findsecbugs.version>1.14.0</findsecbugs.version>
+    <pitest.version>1.30.0</pitest.version>
   </properties>
 
   <!--
@@ -49,6 +52,87 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.6.0</version>
+      </plugin>
+      <!-- The build's own invariants: the Maven and Java this README promises, and the kernel's
+           promise of zero compile-time dependencies (a compile-scoped dependency fails here
+           instead of slipping in through a review). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <execution>
+            <id>enforce</id>
+            <goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <requireMavenVersion><version>[3.9,)</version></requireMavenVersion>
+                <requireJavaVersion><version>[25,)</version></requireJavaVersion>
+                <bannedDependencies>
+                  <excludes><exclude>*:*:*:*:compile</exclude></excludes>
+                  <message>The kernel has zero compile-time dependencies (README.md).</message>
+                </bannedDependencies>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Static analysis gate: SpotBugs with FindSecBugs fails `verify` on any finding at the
+           default threshold. A deliberate exception goes in spotbugs-exclude.xml with the reason
+           beside it, never as a lower threshold. -->
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>${spotbugs.version}</version>
+        <configuration>
+          <effort>Max</effort>
+          <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+          <plugins>
+            <plugin>
+              <groupId>com.h3xstream.findsecbugs</groupId>
+              <artifactId>findsecbugs-plugin</artifactId>
+              <version>${findsecbugs.version}</version>
+            </plugin>
+          </plugins>
+        </configuration>
+        <executions>
+          <execution>
+            <id>check</id>
+            <phase>verify</phase>
+            <goals><goal>check</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Mutation gate: PIT mutates the main code and fails `verify` when the tests kill fewer
+           mutants than mutationThreshold. Line coverage says a line ran; this says a test would
+           notice it being wrong, which is what an invariant of the kernel needs. Measured at 82% on
+           2026-10-10 (337 mutants, about a minute); the gate is 80, like the line gate. Raise it as
+           tests improve, never lower it to pass. Report: target/pit-reports/. -->
+      <plugin>
+        <groupId>org.pitest</groupId>
+        <artifactId>pitest-maven</artifactId>
+        <version>${pitest.version}</version>
+        <dependencies>
+          <dependency>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-junit5-plugin</artifactId>
+            <version>1.2.3</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <targetClasses><param>com.cornerstone.ledger.*</param></targetClasses>
+          <targetTests><param>com.cornerstone.ledger.*</param></targetTests>
+          <mutationThreshold>80</mutationThreshold>
+          <outputFormats><param>HTML</param><param>XML</param></outputFormats>
+          <timestampedReports>false</timestampedReports>
+        </configuration>
+        <executions>
+          <execution>
+            <id>mutation-gate</id>
+            <phase>verify</phase>
+            <goals><goal>mutationCoverage</goal></goals>
+          </execution>
+        </executions>
       </plugin>
       <!-- Coverage gate: `verify` fails when total line coverage is below 80%
            (also run by .githooks/pre-commit). Report: target/site/jacoco/.

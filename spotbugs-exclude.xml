@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Findings the SpotBugs gate deliberately accepts, each with its reason. -->
+<FindBugsFilter>
+  <!-- A posting names the Account it hits by identity: Account is the tree's mutable entity and
+       Ledger checks ownership by object identity (README, "Immutable values vs. mutable entities"),
+       so handing back a copy would break the very check it guards. -->
+  <Match>
+    <Class name="com.cornerstone.ledger.model.Posting"/>
+    <Method name="account"/>
+    <Bug pattern="EI_EXPOSE_REP"/>
+  </Match>
+</FindBugsFilter>
