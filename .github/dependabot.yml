@@ -1,0 +1,18 @@
+# Version updates (security updates are enabled in the repository settings and need no file).
+# Monthly and grouped, so one PR a month per ecosystem instead of one per artifact.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      maven:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
