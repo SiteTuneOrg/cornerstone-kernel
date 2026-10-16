@@ -22,12 +22,21 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+          settings-path: ${{ runner.temp }}/m2
 
       - name: Verify from an empty Maven home
-        run: ./mvnw -B -ntp verify -Dmaven.repo.local="$RUNNER_TEMP/m2/repository"
+        run: ./mvnw -B -ntp -s "$RUNNER_TEMP/m2/settings.xml" verify -Dmaven.repo.local="$RUNNER_TEMP/m2/repository"
         env:
           MAVEN_USER_HOME: ${{ runner.temp }}/m2
 
-      - name: Drop the throwaway Maven home
+      - name: Upload reports
         if: always()
-        run: rm -rf "$RUNNER_TEMP/m2"
+        uses: actions/upload-artifact@v7
+        with:
+          name: clean-build-reports
+          path: |
+            target/site/jacoco/
+            target/pit-reports/
+            target/spotbugsXml.xml
+            target/surefire-reports/
+          if-no-files-found: ignore
