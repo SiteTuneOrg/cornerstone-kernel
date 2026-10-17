@@ -38,7 +38,7 @@ There is no linter/formatter configured.
 
 `.githooks/pre-commit` runs `./mvnw -q verify` whenever staged changes touch `src/`, so a commit fails on any of the gates above (enable per clone with `git config core.hooksPath .githooks`). A Claude Code PreToolUse hook (`.claude/hooks/block-hook-bypass.sh`) blocks `git commit --no-verify`/`-n` and overriding `core.hooksPath` — fix coverage instead; if a bypass is really needed, ask the user to commit themselves. New code needs tests that keep the gate green.
 
-CI (`.github/workflows/ci.yml`) runs the same `./mvnw verify` gate on JDK 25 (Temurin) for pushes to `main` and every pull request, and uploads the JaCoCo report as an artifact. The pre-commit hook is opt-in per clone; CI is the gate that cannot be skipped.
+CI (`.github/workflows/ci.yml`) runs the same `./mvnw verify` gate on JDK 25 (Temurin) for pushes to `main` and every pull request, and uploads the JaCoCo, PIT and SpotBugs reports as the `reports` artifact. `.github/workflows/clean-build.yml` runs the same verify weekly (Monday) and on demand from an empty Maven home and its own settings.xml, so a plugin that no longer downloads shows up before a new machine or a release hits it. The pre-commit hook is opt-in per clone; CI is the gate that cannot be skipped.
 
 ## Pull requests
 
