@@ -14,7 +14,10 @@ permissions:
 
 jobs:
   publish:
-    runs-on: [self-hosted, linux]
+    # Its own runner, under its own OS user: the GITHUB_TOKEN with packages: write never
+    # shares a home or a ~/.m2 with the PR builds. `release` is a label only that runner
+    # carries.
+    runs-on: [self-hosted, linux, release]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
