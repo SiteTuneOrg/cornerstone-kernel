@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      isolated:
+        description: Run the job a Dependabot PR gets (build inside a container)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -17,6 +22,9 @@ concurrency:
 jobs:
   verify:
     name: Tests + coverage gate
+    # A Dependabot PR gets `verify-isolated` instead. Keyed on the PR's author, so
+    # a human push onto a Dependabot branch keeps the isolated job.
+    if: github.event.pull_request.user.login != 'dependabot[bot]' && !inputs.isolated
     # Self-hosted runners (GitHub-hosted minutes are not available to this org).
     runs-on: [self-hosted, linux]
     # One runner serves all three repositories; a hung job would hold the others
@@ -48,3 +56,41 @@ jobs:
             target/pit-reports/
             target/spotbugsXml.xml
           if-no-files-found: ignore
+
+  # A Dependabot PR builds code nobody has read yet: its Maven plugins and tests must
+  # not reach the runner's ~/.m2, credentials or the other repositories' clones. Not
+  # a job-level `container:`: the runner mounts its whole _work directory (every
+  # clone) and the Docker socket (root on the host) into one. Here the container sees
+  # only this workspace, runs as the runner's uid and starts from an empty home, so
+  # Maven, its wrapper and the settings.xml all live and die inside it.
+  verify-isolated:
+    name: Tests + coverage gate (isolated)
+    if: github.event.pull_request.user.login == 'dependabot[bot]' || inputs.isolated
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    env:
+      # eclipse-temurin:25-jdk plus the Maven the wrapper names. The image has no unzip,
+      # and without it ./mvnw fetches the .tar.gz and fails the zip's SHA-256: the job
+      # runs the image's mvn and fails when the wrapper moves to another version.
+      IMAGE: maven:3.9.16-eclipse-temurin-25@sha256:93b8a14ea2f412782e4e842651273b4d903e35cc496284f178fbbe2d67d00976
+      CONTAINER: ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      # No token left in .git/config: the workspace is mounted into the container.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Verify (in a container)
+        run: |
+          docker run --rm --name "$CONTAINER" \
+            --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges \
+            -e HOME=/tmp/home -e MAVEN_OPTS=-Duser.home=/tmp/home \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            "$IMAGE" sh -c '
+              mkdir -p "$HOME" &&
+              v=$(mvn -v | sed -n "s/^Apache Maven \([^ ]*\).*/\1/p") && grep -q "apache-maven-$v-bin" .mvn/wrapper/maven-wrapper.properties || { echo "the wrapper is not Maven $v: bump IMAGE" >&2; exit 1; } &&
+              mvn -B -ntp verify'
+
+      - name: Remove the container
+        if: always()
+        run: docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
