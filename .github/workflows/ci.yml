@@ -46,17 +46,6 @@ jobs:
       - name: Verify
         run: ./mvnw -B -ntp verify
 
-      - name: Upload coverage, mutation and SpotBugs reports
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: reports
-          path: |
-            target/site/jacoco/
-            target/pit-reports/
-            target/spotbugsXml.xml
-          if-no-files-found: ignore
-
   # A Dependabot PR builds code nobody has read yet: its Maven plugins and tests must
   # not reach the runner's ~/.m2, credentials or the other repositories' clones. Not
   # a job-level `container:`: the runner mounts its whole _work directory (every
