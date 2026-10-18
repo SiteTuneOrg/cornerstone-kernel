@@ -1,7 +1,7 @@
 # Version updates (security updates are enabled in the repository settings and need no file).
 # Monthly, minor and patch only, grouped: one PR a month per ecosystem. A major (JUnit 6, a new
 # JaCoCo against Java 25) arrives as its own PR, so it never holds the patches back. The cooldown
-# keeps a version published days ago off the self-hosted runner.
+# keeps a version published days ago out of the build.
 version: 2
 updates:
   - package-ecosystem: maven
