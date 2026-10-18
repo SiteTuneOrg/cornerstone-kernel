@@ -1,6 +1,5 @@
 package com.cornerstone.ledger.model;
 
-import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -60,28 +59,27 @@ public final class Account {
         this.commodity = Objects.requireNonNull(commodity, "commodity");
     }
 
+    boolean belongsToALedger() {
+        return ledger != null;
+    }
+
     /** Called once by {@link Ledger#openRootAccount}/{@link Ledger#openAccount} right after construction. */
     void bindLedger(Ledger ledger) {
         this.ledger = ledger;
     }
 
     /**
-     * The form a name is stored and compared in: surrounding whitespace
-     * stripped and Unicode NFC, so "Aluguel ", and "Aluguél" typed as NFD (the
-     * usual shape of a name read off a macOS file), are the sibling
-     * "Aluguel"/"Aluguél" already is rather than a second account the user
-     * cannot tell apart. Case is kept and compared as typed: "aluguel" and
-     * "Aluguel" are two names, which is a consumer's rule to tighten if it
-     * wants to.
+     * Names are stored and compared EXACTLY as given: "Aluguel", "Aluguel "
+     * and an NFD "Aluguél" are three siblings. Deliberately not normalized
+     * here: the consumer persists its own names and rebuilds this tree to
+     * validate them, so a kernel that started treating stored siblings as
+     * duplicates would lock every existing book that already holds such a
+     * pair. Which names count as "the same" (spaces, Unicode form, case) is
+     * the consumer's rule, applied to the names it accepts.
      */
-    static String normalizeName(String name) {
-        return name == null ? null : Normalizer.normalize(name.strip(), Normalizer.Form.NFC);
-    }
-
-    private static String requireValidName(String raw) {
-        Objects.requireNonNull(raw, "name");
-        String name = normalizeName(raw);
-        if (name.isEmpty()) {
+    private static String requireValidName(String name) {
+        Objects.requireNonNull(name, "name");
+        if (name.isBlank()) {
             throw new IllegalArgumentException("blank account name");
         }
         if (name.contains(":")) {
@@ -107,7 +105,7 @@ public final class Account {
     public void addChild(Account child) {
         Objects.requireNonNull(child, "child");
         if (child.ledger != this.ledger) {
-            throw new ForeignAccountException(this.ledger == null ? this : child);
+            throw ForeignAccountException.crossBook(this, child);
         }
         if (child == this || this.isDescendantOf(child)) {
             throw new CyclicAccountException(child, this);
@@ -128,7 +126,7 @@ public final class Account {
         if (child.parent != null) {
             child.parent.children.remove(child);
         } else if (child.ledger != null) {
-            child.ledger.detachRoot(child);
+            child.ledger.detachRootIfRegistered(child);
         }
         child.parent = this;
         children.add(child);

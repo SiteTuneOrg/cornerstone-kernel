@@ -64,6 +64,12 @@ public final class Ledger {
         return resolved;
     }
 
+    private static void requireSameShape(Commodity existing, Commodity requested) {
+        if (existing.scale() != requested.scale() || existing.kind() != requested.kind()) {
+            throw new CommodityConflictException(existing, requested);
+        }
+    }
+
     /**
      * The registered commodity for {@code requested}'s code, or
      * {@code requested} itself when the code is new — WITHOUT registering it,
@@ -75,18 +81,17 @@ public final class Ledger {
         if (existing == null) {
             return requested;
         }
-        if (existing.scale() != requested.scale() || existing.kind() != requested.kind()) {
-            throw new CommodityConflictException(existing, requested);
-        }
+        requireSameShape(existing, requested);
         return existing;
     }
 
     /** Refuses a commodity this ledger never registered, or one registered under another shape. */
     private void requireRegistered(Commodity commodity) {
-        if (!commoditiesByCode.containsKey(commodity.code())) {
+        Commodity existing = commoditiesByCode.get(commodity.code());
+        if (existing == null) {
             throw new UnknownCommodityException(commodity);
         }
-        resolveCommodity(commodity);
+        requireSameShape(existing, commodity);
     }
 
     public Optional<Commodity> findCommodity(String code) {
@@ -108,7 +113,7 @@ public final class Ledger {
     public Account openRootAccount(String id, String name, AccountNature nature, Commodity commodity) {
         requireUnusedId(id);
         Account account = new Account(id, name, nature, resolveCommodity(commodity));
-        registerCommodity(account.commodity());
+        commoditiesByCode.putIfAbsent(account.commodity().code(), account.commodity());
         account.bindLedger(this);
         accountsById.put(id, account);
         roots.add(account);
@@ -127,7 +132,7 @@ public final class Ledger {
         Account account = new Account(id, name, parent.nature(), resolveCommodity(commodity));
         account.bindLedger(this);
         parent.addChild(account);
-        registerCommodity(account.commodity());
+        commoditiesByCode.putIfAbsent(account.commodity().code(), account.commodity());
         accountsById.put(id, account);
         return account;
     }
@@ -163,7 +168,7 @@ public final class Ledger {
 
     private static void requireSameShape(
             Account existing, String id, String name, AccountNature nature, Commodity commodity, Optional<Account> parent) {
-        boolean same = existing.name().equals(Account.normalizeName(name))
+        boolean same = existing.name().equals(name)
                 && existing.nature() == nature
                 && existing.commodity().equals(commodity)
                 && existing.parent().equals(parent);
@@ -182,9 +187,17 @@ public final class Ledger {
         return Optional.ofNullable(accountsById.get(id));
     }
 
-    /** Called by {@link Account#addChild} when a root of this ledger is moved under another account. */
-    void detachRoot(Account account) {
-        roots.remove(account);
+    /**
+     * Called by {@link Account#addChild} for a parentless child of this ledger.
+     * A registered parentless account is a root being moved; one not
+     * registered yet is a new child being opened by {@link #openAccount},
+     * which was never in {@link #roots} — checked by id so opening a child
+     * does not scan the roots.
+     */
+    void detachRootIfRegistered(Account account) {
+        if (accountsById.get(account.id()) == account) {
+            roots.remove(account);
+        }
     }
 
     public List<Account> roots() {

@@ -50,9 +50,10 @@ Cada uma destas é uma bifurcação real de design, não uma escolha arbitrária
   algo que uma varredura separada precisa detectar. Também recusa uma aresta
   entre dois livros (`ForeignAccountException`): as duas contas pertencem ao
   mesmo `Ledger`, ou nenhuma a um, e uma raiz movida para baixo de outra conta
-  sai de `Ledger.roots()`. Nomes são guardados sem espaço nas pontas e em
-  Unicode NFC, então "Aluguel " ou um "Aluguél" em NFD é o irmão que já existe,
-  não um segundo; a caixa fica como foi digitada.
+  sai de `Ledger.roots()`. Nomes de irmãos são comparados exatamente como
+  vieram; quais grafias contam como o mesmo nome (espaços, forma Unicode,
+  caixa) é regra do consumidor, porque normalizar aqui recusaria livros que
+  ele já guarda.
 
 - **`JournalEntry` não pode existir desbalanceado.** Não tem construtor
   público — só `JournalEntry.Builder`, e `.build()` valida (≥ 2 postings,

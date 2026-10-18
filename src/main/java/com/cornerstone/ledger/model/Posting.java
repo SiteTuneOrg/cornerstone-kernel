@@ -34,8 +34,9 @@ import java.util.OptionalLong;
  * </ul>
  *
  * A mandatory quantity is never silently defaulted. Every shape violation is
- * a {@link PostingShapeException}; a quantity or value in the wrong commodity
- * is a {@link CurrencyMismatchException}.
+ * a {@link PostingShapeException}; a quantity in the wrong commodity, or a
+ * cash account's value in something that is not a currency, is a
+ * {@link CurrencyMismatchException}.
  */
 public final class Posting {
 
@@ -69,7 +70,10 @@ public final class Posting {
                 // BRL actually moved. The entry still balances (its OWN
                 // currency check only compares postings to each other) but
                 // the account's balance in its own currency would be unknown.
-                throw new CurrencyMismatchException(accountCommodity, amount.commodity());
+                throw new PostingShapeException(account, amount, null,
+                        "account \"" + account.path() + "\" holds " + accountCommodity.code()
+                                + " and is posted in " + amount.commodity().code()
+                                + ": an exchange leg requires a Quantity in " + accountCommodity.code());
             }
             if (!quantity.commodity().equals(accountCommodity)) {
                 throw new CurrencyMismatchException(accountCommodity, quantity.commodity());

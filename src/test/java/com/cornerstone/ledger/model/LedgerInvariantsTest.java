@@ -130,7 +130,9 @@ class LedgerInvariantsTest {
         Chart c = chart();
         Account standalone = new Account("standalone", "Avulsa", AccountNature.ASSET, BRL);
 
-        assertThrows(ForeignAccountException.class, () -> standalone.addChild(c.assets()));
+        ForeignAccountException refused = assertThrows(ForeignAccountException.class, () -> standalone.addChild(c.assets()));
+        assertEquals("cannot attach \"Ativos\" under \"Avulsa\": they belong to different books (no Ledger vs a Ledger)",
+                refused.getMessage());
         assertTrue(c.ledger().roots().contains(c.assets()));
     }
 
@@ -154,6 +156,17 @@ class LedgerInvariantsTest {
 
         assertEquals(List.of(assets), ledger.roots());
         assertEquals("Ativos:Investimentos", loose.path());
+    }
+
+    @Test
+    void anExchangeLegWithoutAQuantityIsAShapeRefusal() {
+        Commodity usd = Commodity.currency("USD", 100);
+        Account broker = new Account("broker", "Broker USD", AccountNature.ASSET, usd);
+
+        PostingShapeException refused = assertThrows(PostingShapeException.class,
+                () -> Posting.debit(broker, Money.of(500, BRL)));
+        assertEquals("broker", refused.accountId());
+        assertEquals(Optional.empty(), refused.quantity());
     }
 
     @Test
@@ -214,36 +227,18 @@ class LedgerInvariantsTest {
         assertEquals(Optional.empty(), c.ledger().findCommodity("USD"));
     }
 
-    @Test
-    void orCreateFindsAnAccountByTheNormalizedName() {
-        Chart c = chart();
-
-        assertTrue(c.ledger().accountOrCreate("bank", " Banco ", BRL, c.assets()) == c.bank());
-    }
-
     // --- sibling names ----------------------------------------------------------------------
 
     @Test
-    void namesAreStrippedAndNormalizedToNfc() {
+    void siblingNamesAreComparedExactlySoStoredBooksStillValidate() {
         Ledger ledger = new Ledger();
         Account expenses = ledger.openRootAccount("exp", "Despesas", AccountNature.EXPENSE, BRL);
-        Account rent = ledger.openAccount("rent", "Aluguél", BRL, expenses);
+        ledger.openAccount("rent", "Aluguél", BRL, expenses);
 
-        assertThrows(DuplicateAccountException.class, () -> ledger.openAccount("rent2", "Aluguél ", BRL, expenses));
-        assertThrows(DuplicateAccountException.class, () -> ledger.openAccount("rent3", "Aluguél", BRL, expenses));
-        assertEquals("Condomínio", ledger.openAccount("x", " Condomínio ", BRL, expenses).name());
-        assertEquals("Aluguél", rent.name());
-        Account other = ledger.openAccount("other", "Outros", BRL, expenses);
-        assertThrows(DuplicateAccountException.class, () -> other.rename("Aluguél"));
-    }
-
-    @Test
-    void namesKeepTheirCase() {
-        Ledger ledger = new Ledger();
-        Account expenses = ledger.openRootAccount("exp", "Despesas", AccountNature.EXPENSE, BRL);
-        ledger.openAccount("rent", "Aluguel", BRL, expenses);
-
-        assertEquals("aluguel", ledger.openAccount("rent2", "aluguel", BRL, expenses).name());
+        assertEquals("Aluguél ", ledger.openAccount("rent2", "Aluguél ", BRL, expenses).name());
+        assertEquals("Alugue\u0301l", ledger.openAccount("rent3", "Alugue\u0301l", BRL, expenses).name());
+        assertEquals("aluguél", ledger.openAccount("rent4", "aluguél", BRL, expenses).name());
+        assertThrows(DuplicateAccountException.class, () -> ledger.openAccount("rent5", "Aluguél", BRL, expenses));
     }
 
     // --- overflow stays in the hierarchy ----------------------------------------------------

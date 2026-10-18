@@ -13,7 +13,13 @@ import java.util.Optional;
  * quantity silently corrupts the share count), not ordinary argument
  * validation, so it belongs in the sealed hierarchy: a caller that catches
  * {@link LedgerException} catches it too. A quantity in a commodity other
- * than the account's own is still a {@link CurrencyMismatchException}.
+ * than the account's own, or a value that is not in a currency on a cash
+ * account, is still a {@link CurrencyMismatchException}.
+ *
+ * <p>{@link #amount()} and {@link #quantity()} are transient: like the
+ * accounts other exceptions here name in their message, they do not survive
+ * Java serialization (after it {@code amount()} is {@code null}); the message
+ * and {@link #accountId()} do.
  */
 public final class PostingShapeException extends LedgerException {
 

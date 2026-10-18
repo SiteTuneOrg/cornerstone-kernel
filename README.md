@@ -47,9 +47,10 @@ Each of these is a real design fork, not an arbitrary choice:
   unreachable rather than something a separate walk has to detect. It also
   refuses an edge between two books (`ForeignAccountException`): both
   accounts belong to the same `Ledger`, or both to none, and a root moved
-  under another account leaves `Ledger.roots()`. Names are stored stripped
-  and in Unicode NFC, so "Aluguel " or an NFD "Aluguél" is the sibling that
-  already exists, not a second one; case is kept as typed.
+  under another account leaves `Ledger.roots()`. Sibling names are compared
+  exactly as given; which spellings count as the same name (spaces, Unicode
+  form, case) is the consumer's rule, since normalizing here would refuse
+  books it already stores.
 
 - **`JournalEntry` cannot exist unbalanced.** It has no public constructor —
   only `JournalEntry.Builder`, and `.build()` validates (≥ 2 postings, every

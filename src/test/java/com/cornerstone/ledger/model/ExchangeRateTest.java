@@ -107,7 +107,7 @@ class ExchangeRateTest {
         Ledger ledger = new Ledger();
         Account broker = ledger.openRootAccount("broker-usd", "Broker USD", AccountNature.ASSET, USD);
 
-        assertThrows(CurrencyMismatchException.class, () -> Posting.debit(broker, Money.of(52_500, BRL)));
+        assertThrows(PostingShapeException.class, () -> Posting.debit(broker, Money.of(52_500, BRL)));
         assertThrows(CurrencyMismatchException.class,
                 () -> Posting.debit(broker, Money.of(52_500, BRL), Quantity.of(10_000, BRL)));
         assertThrows(PostingShapeException.class,
