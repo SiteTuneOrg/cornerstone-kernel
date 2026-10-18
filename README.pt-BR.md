@@ -5,9 +5,18 @@
 Um kernel concreto de ledger de partida dobrada em Java: as classes e
 entidades de partida dobrada, e nada além disso. **Ainda sem banco de
 dados** — isto é só o kernel, Java 25 puro, sem dependências além do JDK e
-JUnit para os testes. Persistência é um projeto futuro deliberadamente
-separado, construído sobre os tipos públicos deste aqui, não uma camada
+JUnit para os testes. A persistência fica de fora, não uma camada
 JPA/JDBC colada por cima.
+
+**Para que o kernel serve, hoje.** O único consumidor, o `cornerstone-server`,
+persiste os próprios DTOs de wire (com campos sem contraparte no kernel:
+competência, fechamento, ordem, número, notas, versão, cinco estados de
+conciliação, pareamento...) e reconstrói um `Ledger` do kernel a cada leitura e
+escrita para VALIDAR o livro e fazer a aritmética exata, e depois o descarta.
+Então o kernel é o núcleo de validação e aritmética, e o modelo persistido é do
+consumidor. Fazer o kernel crescer até um modelo com ida e volta completa é uma
+decisão para quando um segundo consumidor precisar, não uma promessa que este
+README deixa em aberto.
 
 Este é um projeto independente, não faz parte do build de nenhuma aplicação
 maior — só um módulo Maven simples que você clona e roda sozinho (`mvn test`).
@@ -38,7 +47,13 @@ Cada uma destas é uma bifurcação real de design, não uma escolha arbitrária
   (`NatureMismatchException`) ou um nome duplicado (`DuplicateAccountException`)
   no exato momento em que a aresta seria criada — não existe outra forma de
   anexar um filho, então um ciclo é estruturalmente inatingível em vez de
-  algo que uma varredura separada precisa detectar.
+  algo que uma varredura separada precisa detectar. Também recusa uma aresta
+  entre dois livros (`ForeignAccountException`): as duas contas pertencem ao
+  mesmo `Ledger`, ou nenhuma a um, e uma raiz movida para baixo de outra conta
+  sai de `Ledger.roots()`. Nomes de irmãos são comparados exatamente como
+  vieram; quais grafias contam como o mesmo nome (espaços, forma Unicode,
+  caixa) é regra do consumidor, porque normalizar aqui recusaria livros que
+  ele já guarda.
 
 - **`JournalEntry` não pode existir desbalanceado.** Não tem construtor
   público — só `JournalEntry.Builder`, e `.build()` valida (≥ 2 postings,
@@ -55,7 +70,12 @@ Cada uma destas é uma bifurcação real de design, não uma escolha arbitrária
   fazer o grafo de objetos crescer, então ele consegue de fato garantir — não
   só documentar — que nenhum `JournalEntry` em `ledger.entries()` referencia
   uma `Account` que este `Ledger` não possui (`Ledger.post` checa identidade
-  de objeto, não só uma string de id batendo).
+  de objeto, não só uma string de id batendo). O `build()` valida a forma do
+  lançamento; o `post()` valida contra o livro como ele está agora: toda
+  commodity que ele carrega tem de ser a que este ledger registrou com aquele
+  código (`UnknownCommodityException`, `CommodityConflictException`), e toda
+  conta ainda tem de aceitar lançamentos, porque ela pode ter sido ocultada ou
+  ganhado um filho no meio do caminho.
 
 - **Uma pequena hierarquia de exceções (`sealed class LedgerException`) em
   vez de um enum com tags.** Chamadores em Java distinguem falhas pela
@@ -66,18 +86,25 @@ Cada uma destas é uma bifurcação real de design, não uma escolha arbitrária
   `CommodityConflictException`, `AccountIdConflictException`,
   `ForeignAccountException`, `ForeignPostingException`,
   `DuplicateJournalEntryException`, `InsufficientPostingsException`,
-  `CyclicAccountException`, `ArithmeticRangeException`) — cada uma carregando exatamente os dados
+  `CyclicAccountException`, `ArithmeticRangeException`, `PostingShapeException`,
+  `UnknownCommodityException`) — cada uma carregando exatamente os dados
   necessários pra formatar sua própria mensagem, selada (`sealed`) para que
   um `switch` sobre elas seja exaustivo. Mantido honesto numa revisão do
   `Ledger`: um punhado de violações de invariante (registro de commodity
   conflitante, id reutilizado com forma diferente, id já em uso, posting
   contra uma conta que pertence a outro `Ledger`) ainda lançava um
   `IllegalArgumentException` cru, fora da hierarquia selada — as três
-  exceções acima fecharam essa lacuna. `IllegalArgumentException` puro
+  exceções acima fecharam essa lacuna. A mesma revisão, depois, moveu mais
+  duas: um `Posting` com a forma errada (`Quantity` faltando ou onde não cabe,
+  um lado de câmbio zerado, um posting que não move nada) é uma
+  `PostingShapeException`, porque isso É o invariante das posições; e uma soma
+  que estoura um `long` (`Money.plus`, `balanceOf`, `unitsOf`, `trialBalance`,
+  os totais de um lançamento) é uma `ArithmeticRangeException` com o resultado
+  exato, nunca uma `ArithmeticException` crua. `IllegalArgumentException` puro
   continua onde já estava, pra validação comum de argumento de construtor
   (`Money`/`Quantity` recusando valor negativo, `Account` recusando nome
-  vazio) — isso é um tipo de falha diferente de um invariante do ledger, e é
-  a convenção padrão do Java pra esse caso.
+  vazio, um `Price` de zero unidades) — isso é um tipo de falha diferente de
+  um invariante do ledger, e é a convenção padrão do Java pra esse caso.
 
 ## Posições: a commodity de uma conta é o que ela GUARDA, não em que ela é precificada
 
@@ -101,7 +128,7 @@ para como sua quantidade é exibida.
   commodity da conta difere da do dinheiro.** Uma conta em moeda lançada na
   própria moeda aceita `Money` e RECUSA `Quantity` totalmente
   (`Posting.debit(cashAccount, money, quantity)` lança
-  `IllegalArgumentException` antes da construção). Uma conta em moeda lançada
+  `PostingShapeException` antes da construção). Uma conta em moeda lançada
   em OUTRA moeda é uma perna de câmbio e EXIGE `Quantity` na própria moeda
   (veja `TRADING` abaixo), com os DOIS lados diferentes de zero: a razão entre
   eles é a taxa, e duas pernas de dinheiro zero fechariam em 0 == 0 criando
@@ -345,14 +372,26 @@ src/main/java/com/cornerstone/ledger/model/
   JournalEntry.java               o agregado de partida dobrada; válido por construção
   Ledger.java                     raiz do agregado: registro de commodities + plano de contas + lançamentos postados + conciliação
   LedgerArithmetic.java          mulDiv (trunc/floor/round) e rateio por maior resto, exatos
-  LedgerException.java + 14 subclasses (ArithmeticRangeException carrega a falha como dado)
+  LedgerException.java + 16 subclasses (ArithmeticRangeException carrega a falha como dado)
 src/test/java/.../model/LedgerTest.java
+src/test/java/.../model/LedgerInvariantsTest.java
+src/test/java/.../model/AccountTest.java
+src/test/java/.../model/MoneyTest.java
+src/test/java/.../model/QuantityTest.java
 src/test/java/.../model/PositionTest.java
 src/test/java/.../model/PriceTest.java
 src/test/java/.../model/ExchangeRateTest.java
 src/test/java/.../model/LedgerChartBuildingTest.java
 src/test/java/.../model/LedgerArithmeticTest.java
 ```
+
+Nem todo tipo público tem consumidor ainda: o `cornerstone-server` usa o
+registro de commodities, `Account`, `Posting`, `JournalEntry`, `Ledger.post`,
+`balanceOf`/`unitsOf` e `LedgerArithmetic`. `Price`, `ExchangeRate`,
+`ReconciliationStatus` (com `setReconciliationStatus`), `setAccountCode`/
+`findAccountByCode`, `trialBalance`, `rename` e as flags `taxRelated`/
+`autoInterestTransfer` ficam e têm teste, mas nada os lê hoje; mude-os
+sabendo que nenhum consumidor dá retorno sobre eles.
 
 Rode assim: `mvn test` (precisa de um JDK 25 no `PATH`, ou aponte o
 toolchain do Maven para um).
@@ -371,9 +410,9 @@ repositório, que é o que o build local do server sempre fez.
 
 ## O que fica deliberadamente de fora
 
-- **Sem banco de dados.** Explicitamente fora de escopo por direção do
-  usuário neste spike — uma camada JDBC/ORM sobre `Ledger`/`Account`/`JournalEntry`
-  é seu próprio projeto futuro, não colada aqui.
+- **Sem banco de dados.** Explicitamente fora de escopo: o consumidor
+  persiste o próprio modelo e usa este kernel para validá-lo (ver o começo
+  deste arquivo).
 - Sem motor fiscal, sem rebalanceamento, sem cálculo de posições/custo
   médio, sem camada HTTP — o escopo continua limitado às classes e
   entidades de partida dobrada.

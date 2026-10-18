@@ -57,7 +57,7 @@ public final class Quantity implements Comparable<Quantity> {
 
     public Quantity plus(Quantity other) {
         requireSameCommodity(other);
-        return new Quantity(Math.addExact(units, other.units), commodity);
+        return new Quantity(LedgerArithmetic.add(units, other.units, "Quantity.plus"), commodity);
     }
 
     public Quantity minus(Quantity other) {

@@ -11,7 +11,8 @@ import java.util.Objects;
  * constructed at all, so "which posting is the debit" is answered by the
  * type ({@code Posting.side()}), never by squinting at a sign.
  *
- * <p>Arithmetic overflow is checked ({@link Math#addExact}); this class does
+ * <p>Arithmetic overflow is checked and refused as an
+ * {@link ArithmeticRangeException}; this class does
  * not additionally clamp to a smaller ceiling such as
  * {@code Number.MAX_SAFE_INTEGER} — a pure JVM library has no downstream
  * boundary that would justify one.
@@ -51,7 +52,7 @@ public final class Money implements Comparable<Money> {
 
     public Money plus(Money other) {
         requireSameCommodity(other);
-        return new Money(Math.addExact(amount, other.amount), commodity);
+        return new Money(LedgerArithmetic.add(amount, other.amount, "Money.plus"), commodity);
     }
 
     /**

@@ -110,4 +110,17 @@ public final class LedgerArithmetic {
         }
         return value.longValue();
     }
+
+    /**
+     * {@code a + b}, or {@link ArithmeticRangeException} with the exact sum
+     * when it does not fit a {@code long} — the hierarchy's overflow, never a
+     * bare {@link ArithmeticException}.
+     */
+    static long add(long a, long b, String context) {
+        try {
+            return Math.addExact(a, b);
+        } catch (ArithmeticException overflow) {
+            throw ArithmeticRangeException.longOverflow(context, BigInteger.valueOf(a).add(BigInteger.valueOf(b)));
+        }
+    }
 }

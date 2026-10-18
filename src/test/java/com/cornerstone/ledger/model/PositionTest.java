@@ -60,7 +60,7 @@ class PositionTest {
         Account assets = ledger.openRootAccount("assets", "Ativos", AccountNature.ASSET, BRL);
         Account bank = ledger.openAccount("bank", "Banco", BRL, assets);
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(PostingShapeException.class,
                 () -> Posting.debit(bank, Money.of(100, BRL), Quantity.of(1, PETR4)));
     }
 
@@ -70,7 +70,7 @@ class PositionTest {
         Account assets = ledger.openRootAccount("assets", "Ativos", AccountNature.ASSET, BRL);
         Account stock = ledger.openAccount("petr4", "PETR4", PETR4, assets);
 
-        assertThrows(IllegalArgumentException.class, () -> Posting.debit(stock, Money.of(100, BRL)));
+        assertThrows(PostingShapeException.class, () -> Posting.debit(stock, Money.of(100, BRL)));
     }
 
     @Test
@@ -79,7 +79,7 @@ class PositionTest {
         Account assets = ledger.openRootAccount("assets", "Ativos", AccountNature.ASSET, BRL);
         Account stock = ledger.openAccount("petr4", "PETR4", PETR4, assets);
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(PostingShapeException.class,
                 () -> Posting.debit(stock, Money.zero(BRL), Quantity.zero(PETR4)));
     }
 
@@ -90,7 +90,7 @@ class PositionTest {
         Account stock = ledger.openAccount("petr4", "PETR4", PETR4, assets);
         Commodity hgtx3 = Commodity.asset("HGTX3", 1);
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(PostingShapeException.class,
                 () -> Posting.debit(stock, Money.of(10, hgtx3), Quantity.of(1, PETR4)));
     }
 }

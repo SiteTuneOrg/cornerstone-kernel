@@ -33,7 +33,10 @@ import java.util.OptionalLong;
  *       units held.
  * </ul>
  *
- * A mandatory quantity is never silently defaulted.
+ * A mandatory quantity is never silently defaulted. Every shape violation is
+ * a {@link PostingShapeException}; a quantity in the wrong commodity, or a
+ * cash account's value in something that is not a currency, is a
+ * {@link CurrencyMismatchException}.
  */
 public final class Posting {
 
@@ -53,7 +56,7 @@ public final class Posting {
         Commodity accountCommodity = account.commodity();
         if (accountCommodity.kind() == CommodityKind.CURRENCY && accountCommodity.equals(amount.commodity())) {
             if (quantity != null) {
-                throw new IllegalArgumentException(
+                throw new PostingShapeException(account, amount, quantity,
                         "account \"" + account.path() + "\" is posted in its own currency — money is the position, it does not accept a Quantity");
             }
         } else if (accountCommodity.kind() == CommodityKind.CURRENCY) { // posted in another currency: an exchange leg
@@ -67,7 +70,10 @@ public final class Posting {
                 // BRL actually moved. The entry still balances (its OWN
                 // currency check only compares postings to each other) but
                 // the account's balance in its own currency would be unknown.
-                throw new CurrencyMismatchException(accountCommodity, amount.commodity());
+                throw new PostingShapeException(account, amount, null,
+                        "account \"" + account.path() + "\" holds " + accountCommodity.code()
+                                + " and is posted in " + amount.commodity().code()
+                                + ": an exchange leg requires a Quantity in " + accountCommodity.code());
             }
             if (!quantity.commodity().equals(accountCommodity)) {
                 throw new CurrencyMismatchException(accountCommodity, quantity.commodity());
@@ -79,13 +85,13 @@ public final class Posting {
                 // JournalEntry.build() never sees them. Unlike a position (a split moves units with
                 // no money), a currency has no legitimate one-sided move inside another currency's
                 // entry: a USD-to-USD transfer is an entry in USD.
-                throw new IllegalArgumentException(
+                throw new PostingShapeException(account, amount, quantity,
                         "exchange leg on \"" + account.path() + "\" must move both the entry's currency and "
                                 + accountCommodity.code() + " (got " + amount + " and " + quantity + ")");
             }
         } else { // ASSET: a position account.
             if (amount.commodity().kind() != CommodityKind.CURRENCY) {
-                throw new IllegalArgumentException(
+                throw new PostingShapeException(account, amount, quantity,
                         "a position's value must be in a CURRENCY, got " + amount.commodity().code()
                                 + " (another asset) on " + account.path());
             }
@@ -96,7 +102,7 @@ public final class Posting {
                 // silently corrupt the SHARE COUNT — which is exactly what
                 // this type exists to prevent — while looking like a
                 // perfectly ordinary, successfully-posted entry.
-                throw new IllegalArgumentException(
+                throw new PostingShapeException(account, amount, null,
                         "position account \"" + account.path() + "\" requires a Quantity — none was given");
             }
             if (!quantity.commodity().equals(accountCommodity)) {
@@ -109,7 +115,7 @@ public final class Posting {
             // A quantity-only move (e.g. a fractional-share correction with
             // no monetary value) is legitimate and must NOT trip this; only
             // "literally nothing changed" is refused.
-            throw new IllegalArgumentException("posting with no effect at all (amount and quantity both zero) on " + account.path());
+            throw new PostingShapeException(account, amount, quantity, "posting with no effect at all (amount and quantity both zero) on " + account.path());
         }
     }
 

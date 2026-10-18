@@ -59,11 +59,24 @@ public final class Account {
         this.commodity = Objects.requireNonNull(commodity, "commodity");
     }
 
+    boolean belongsToALedger() {
+        return ledger != null;
+    }
+
     /** Called once by {@link Ledger#openRootAccount}/{@link Ledger#openAccount} right after construction. */
     void bindLedger(Ledger ledger) {
         this.ledger = ledger;
     }
 
+    /**
+     * Names are stored and compared EXACTLY as given: "Aluguel", "Aluguel "
+     * and an NFD "Aluguél" are three siblings. Deliberately not normalized
+     * here: the consumer persists its own names and rebuilds this tree to
+     * validate them, so a kernel that started treating stored siblings as
+     * duplicates would lock every existing book that already holds such a
+     * pair. Which names count as "the same" (spaces, Unicode form, case) is
+     * the consumer's rule, applied to the names it accepts.
+     */
     private static String requireValidName(String name) {
         Objects.requireNonNull(name, "name");
         if (name.isBlank()) {
@@ -82,10 +95,18 @@ public final class Account {
     /**
      * Attaches {@code child} under this account. Enforces, at the point of
      * attachment, the rules that matter for a tree edge: no cycle, nature
-     * inheritance, and unique sibling names/codes.
+     * inheritance, unique sibling names/codes, and one book — both accounts
+     * belong to the same {@link Ledger}, or both to none. Grafting a
+     * standalone account, or another book's, under a ledger's account would
+     * make a leaf stop accepting postings for a child the ledger cannot find,
+     * and skip the ledger's chart-wide code uniqueness. A root of the ledger
+     * moved under another account stops being one of its {@link Ledger#roots}.
      */
     public void addChild(Account child) {
         Objects.requireNonNull(child, "child");
+        if (child.ledger != this.ledger) {
+            throw ForeignAccountException.crossBook(this, child);
+        }
         if (child == this || this.isDescendantOf(child)) {
             throw new CyclicAccountException(child, this);
         }
@@ -104,6 +125,8 @@ public final class Account {
         }
         if (child.parent != null) {
             child.parent.children.remove(child);
+        } else if (child.ledger != null) {
+            child.ledger.detachRootIfRegistered(child);
         }
         child.parent = this;
         children.add(child);
@@ -119,7 +142,12 @@ public final class Account {
         return !placeholder && !system && !hidden && children.isEmpty();
     }
 
-    /** Whether this account is eligible to be disabled: never a root, never a system account. */
+    /**
+     * Whether a user-facing layer should OFFER to disable this account: never
+     * a root, never a system account. Advice only — {@link #hide()} does not
+     * enforce it, because a consumer may hold its book flat (every account a
+     * root) and still have to restate which accounts are hidden.
+     */
     public boolean canBeDisabled() {
         return parent != null && !system;
     }
@@ -210,7 +238,10 @@ public final class Account {
         return hidden;
     }
 
-    /** Soft-deletes the account: stops accepting new postings, history untouched. */
+    /**
+     * Soft-deletes the account: stops accepting new postings, history
+     * untouched. Unconditional; see {@link #canBeDisabled()}.
+     */
     public void hide() {
         this.hidden = true;
     }

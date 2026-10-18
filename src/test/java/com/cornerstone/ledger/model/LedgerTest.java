@@ -82,7 +82,7 @@ class LedgerTest {
     void childAccountMustShareItsParentsNature() {
         Ledger ledger = new Ledger();
         Account assets = ledger.openRootAccount("assets", "Assets", AccountNature.ASSET, BRL);
-        Account rogue = new Account("rogue", "Wrong Account", AccountNature.LIABILITY, BRL);
+        Account rogue = ledger.openRootAccount("rogue", "Wrong Account", AccountNature.LIABILITY, BRL);
 
         assertThrows(NatureMismatchException.class, () -> assets.addChild(rogue));
     }
