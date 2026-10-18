@@ -5,8 +5,16 @@
 A concrete double-entry ledger kernel in Java: the double-entry classes and
 entities, and nothing else. **No database yet** — this is the kernel only,
 plain Java 25 with zero dependencies beyond the JDK and JUnit for tests.
-Persistence is a deliberately separate future project built on top of this
-one's public types, not a JPA/JDBC layer bolted onto it here.
+Persistence stays out of it, not a JPA/JDBC layer bolted onto it here.
+
+**What the kernel is for, today.** Its one consumer, `cornerstone-server`,
+persists its own wire DTOs (with fields the kernel has no counterpart for:
+accrual, closing, order, number, notes, version, five reconciliation states,
+pairing...) and rebuilds a kernel `Ledger` on every read and write to VALIDATE
+the book and do its exact arithmetic, then throws it away. So the kernel is
+the validation and arithmetic core, and the persisted model belongs to the
+consumer. Growing the kernel into a round-trippable model is a decision for
+when a second consumer needs it, not a promise this README keeps open.
 
 This is a standalone project, not part of any larger app's build — just a
 plain Maven module you clone and run on its own (`mvn test`).
@@ -36,7 +44,12 @@ Each of these is a real design fork, not an arbitrary choice:
   refuses a nature mismatch (`NatureMismatchException`) or a duplicate name
   (`DuplicateAccountException`) at the moment the edge would be created —
   there is no other way to attach a child, so a cycle is structurally
-  unreachable rather than something a separate walk has to detect.
+  unreachable rather than something a separate walk has to detect. It also
+  refuses an edge between two books (`ForeignAccountException`): both
+  accounts belong to the same `Ledger`, or both to none, and a root moved
+  under another account leaves `Ledger.roots()`. Names are stored stripped
+  and in Unicode NFC, so "Aluguel " or an NFD "Aluguél" is the sibling that
+  already exists, not a second one; case is kept as typed.
 
 - **`JournalEntry` cannot exist unbalanced.** It has no public constructor —
   only `JournalEntry.Builder`, and `.build()` validates (≥ 2 postings, every
@@ -52,6 +65,11 @@ Each of these is a real design fork, not an arbitrary choice:
   can actually guarantee — not just document — that no `JournalEntry` in
   `ledger.entries()` references an `Account` this `Ledger` doesn't own
   (`Ledger.post` checks object identity, not just a matching id string).
+  `build()` validates the entry's shape; `post()` validates it against the
+  book as it is now: every commodity it carries must be the one this ledger
+  registered under that code (`UnknownCommodityException`,
+  `CommodityConflictException`), and every account must still accept postings,
+  since an account may have been hidden or gained a child in between.
 
 - **A small exception hierarchy (`sealed class LedgerException`) instead of
   a tagged enum.** Java callers distinguish failures by `catch` clause, so
@@ -62,17 +80,25 @@ Each of these is a real design fork, not an arbitrary choice:
   `CommodityConflictException`, `AccountIdConflictException`,
   `ForeignAccountException`, `ForeignPostingException`,
   `DuplicateJournalEntryException`, `InsufficientPostingsException`,
-  `CyclicAccountException`, `ArithmeticRangeException`) — each carrying exactly the data needed to
+  `CyclicAccountException`, `ArithmeticRangeException`, `PostingShapeException`,
+  `UnknownCommodityException`) — each carrying exactly the data needed to
   format its own message, sealed so a `switch` over them is exhaustive. Kept
   honest on a pass through `Ledger`: a handful of invariant violations
   (a conflicting commodity registration, an id reused with a different
   shape, an id already in use, a posting against an account owned by a
   different `Ledger`) were still throwing a bare `IllegalArgumentException`
   outside the sealed hierarchy — the three exceptions above closed that gap.
-  Plain `IllegalArgumentException` stays where it already was for ordinary
-  constructor argument validation (`Money`/`Quantity` refusing a negative
-  value, `Account` refusing a blank name) — that's a different kind of
-  failure than a ledger invariant, and the standard Java convention for it.
+  The same pass, later, moved two more: a `Posting` of the wrong shape (a
+  `Quantity` missing or where none belongs, a zero exchange side, a posting
+  that moves nothing) is a `PostingShapeException`, because that IS the
+  invariant of positions; and a sum that overflows a `long` (`Money.plus`,
+  `balanceOf`, `unitsOf`, `trialBalance`, an entry's totals) is an
+  `ArithmeticRangeException` carrying the exact result, never a bare
+  `ArithmeticException`. Plain `IllegalArgumentException` stays where it
+  already was for ordinary constructor argument validation
+  (`Money`/`Quantity` refusing a negative value, `Account` refusing a blank
+  name, a `Price` of zero units) — that's a different kind of failure than a
+  ledger invariant, and the standard Java convention for it.
 
 ## Positions: an account's commodity is what it HOLDS, not what it's priced in
 
@@ -96,7 +122,7 @@ its quantity is displayed.
   when the account's commodity differs from the money's.** A currency account
   posted in its own currency accepts `Money` and REFUSES a `Quantity`
   outright (`Posting.debit(cashAccount, money, quantity)` throws
-  `IllegalArgumentException` before construction). A currency account posted
+  `PostingShapeException` before construction). A currency account posted
   in ANOTHER currency is an exchange leg and REQUIRES a `Quantity` in its own
   currency (see `TRADING` below), with BOTH sides non-zero: their ratio is the
   rate, and two zero-money legs would otherwise balance at 0 == 0 while minting
@@ -330,14 +356,26 @@ src/main/java/com/cornerstone/ledger/model/
   JournalEntry.java               the double-entry aggregate; valid by construction
   Ledger.java                     aggregate root: commodity registry + chart of accounts + posted entries + reconciliation
   LedgerArithmetic.java          mulDiv (trunc/floor/round) and largest-remainder apportion, exact
-  LedgerException.java + 14 subclasses (ArithmeticRangeException carries its failure as data)
+  LedgerException.java + 16 subclasses (ArithmeticRangeException carries its failure as data)
 src/test/java/.../model/LedgerTest.java
+src/test/java/.../model/LedgerInvariantsTest.java
+src/test/java/.../model/AccountTest.java
+src/test/java/.../model/MoneyTest.java
+src/test/java/.../model/QuantityTest.java
 src/test/java/.../model/PositionTest.java
 src/test/java/.../model/PriceTest.java
 src/test/java/.../model/ExchangeRateTest.java
 src/test/java/.../model/LedgerChartBuildingTest.java
 src/test/java/.../model/LedgerArithmeticTest.java
 ```
+
+Not every public type has a consumer yet: `cornerstone-server` uses the
+commodity registry, `Account`, `Posting`, `JournalEntry`, `Ledger.post`,
+`balanceOf`/`unitsOf` and `LedgerArithmetic`. `Price`, `ExchangeRate`,
+`ReconciliationStatus` (with `setReconciliationStatus`), `setAccountCode`/
+`findAccountByCode`, `trialBalance`, `rename` and the `taxRelated`/
+`autoInterestTransfer` flags are kept and tested, but nothing reads them
+today; change them knowing no consumer gives feedback on them.
 
 Run it: `mvn test` (needs a JDK 25 on `PATH`, or point Maven's toolchain at one).
 
@@ -355,8 +393,7 @@ repository, which is what a local build of the server has always done.
 
 ## What this deliberately leaves out
 
-- **No database.** Explicitly out of scope per the user's direction on this
-  spike — a JDBC/ORM layer on top of `Ledger`/`Account`/`JournalEntry` is
-  its own future project, not bolted on here.
+- **No database.** Explicitly out of scope: the consumer persists its own
+  model and uses this kernel to validate it (see the top of this file).
 - No fiscal engine, no rebalancing, no positions/cost-basis walk, no HTTP
   layer — this stays scoped to the double-entry classes and entities only.

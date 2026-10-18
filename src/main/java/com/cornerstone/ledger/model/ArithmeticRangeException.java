@@ -6,7 +6,9 @@ import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
- * A {@link LedgerArithmetic} operation was refused. Carries the failure as
+ * An arithmetic operation of this kernel was refused: a {@link LedgerArithmetic}
+ * call, or a sum ({@link Money#plus}, {@link Ledger#balanceOf}...) whose exact
+ * result does not fit a {@code long}. Carries the failure as
  * data ({@link #reason}, {@link #context}, {@link #value}, {@link #index})
  * rather than only as prose, so a layer on top of this kernel can phrase the
  * error in its own contract's words without parsing an English message.
@@ -65,7 +67,7 @@ public final class ArithmeticRangeException extends LedgerException {
         return reason;
     }
 
-    /** The operation that failed: {@code "mulDiv"} or {@code "apportion"}. */
+    /** The operation that failed, e.g. {@code "mulDiv"}, {@code "apportion"}, {@code "Money.plus"} or {@code "Ledger.balanceOf"}. */
     public String context() {
         return context;
     }

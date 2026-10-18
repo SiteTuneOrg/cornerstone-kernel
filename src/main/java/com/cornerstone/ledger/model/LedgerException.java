@@ -11,7 +11,8 @@ package com.cornerstone.ledger.model;
  * {@link CommodityConflictException}, {@link AccountIdConflictException},
  * {@link ForeignAccountException}, {@link ForeignPostingException},
  * {@link DuplicateJournalEntryException}, {@link InsufficientPostingsException},
- * {@link CyclicAccountException}, {@link ArithmeticRangeException}), so callers distinguish failures by
+ * {@link CyclicAccountException}, {@link ArithmeticRangeException},
+ * {@link PostingShapeException}, {@link UnknownCommodityException}), so callers distinguish failures by
  * {@code catch} clause and a {@code switch} over them is exhaustive.
  */
 public sealed class LedgerException extends RuntimeException
@@ -19,7 +20,8 @@ public sealed class LedgerException extends RuntimeException
                 CurrencyMismatchException, NatureMismatchException, DuplicateAccountException,
                 DuplicateAccountCodeException, CommodityConflictException, AccountIdConflictException,
                 ForeignAccountException, ForeignPostingException, DuplicateJournalEntryException,
-                InsufficientPostingsException, CyclicAccountException, ArithmeticRangeException {
+                InsufficientPostingsException, CyclicAccountException, ArithmeticRangeException,
+                PostingShapeException, UnknownCommodityException {
 
     public LedgerException(String message) {
         super(message);

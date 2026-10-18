@@ -33,7 +33,7 @@ class MoneyTest {
     @Test
     void refusesANegativeResultAndOverflow() {
         assertThrows(IllegalArgumentException.class, () -> Money.of(1, BRL).minus(Money.of(2, BRL)));
-        assertThrows(ArithmeticException.class, () -> Money.of(Long.MAX_VALUE, BRL).plus(Money.of(1, BRL)));
+        assertThrows(ArithmeticRangeException.class, () -> Money.of(Long.MAX_VALUE, BRL).plus(Money.of(1, BRL)));
     }
 
     @Test

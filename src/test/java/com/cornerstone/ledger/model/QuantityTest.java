@@ -42,7 +42,7 @@ class QuantityTest {
     @Test
     void refusesANegativeResultAndOverflow() {
         assertThrows(IllegalArgumentException.class, () -> Quantity.of(1, PETR4).minus(Quantity.of(2, PETR4)));
-        assertThrows(ArithmeticException.class,
+        assertThrows(ArithmeticRangeException.class,
                 () -> Quantity.of(Long.MAX_VALUE, PETR4).plus(Quantity.of(1, PETR4)));
     }
 

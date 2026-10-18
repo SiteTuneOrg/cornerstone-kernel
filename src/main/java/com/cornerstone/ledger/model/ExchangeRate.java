@@ -33,8 +33,11 @@ public final class ExchangeRate {
                     "ExchangeRate requires two different currencies, got " + base.commodity().code()
                             + " on both sides");
         }
-        if (base.isZero()) {
-            throw new IllegalArgumentException("ExchangeRate cannot have a zero base");
+        if (base.isZero() || quote.isZero()) {
+            // No currency is worth nothing: a zero on either side is a rate
+            // that was never read, and a zero quote would convert a whole
+            // balance to 0 without a word.
+            throw new IllegalArgumentException("ExchangeRate cannot have a zero side, got " + base + " = " + quote);
         }
     }
 
@@ -66,6 +69,17 @@ public final class ExchangeRate {
         }
         long converted = LedgerArithmetic.mulDiv(amount.amount(), quote.amount(), base.amount(), LedgerArithmetic.Rounding.TRUNC);
         return Money.of(converted, quote.commodity());
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof ExchangeRate other
+                && base.equals(other.base) && quote.equals(other.quote) && date.equals(other.date);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(base, quote, date);
     }
 
     @Override

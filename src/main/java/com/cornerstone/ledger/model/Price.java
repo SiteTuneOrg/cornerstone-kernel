@@ -34,6 +34,9 @@ public final class Price {
         if (units.isZero()) {
             throw new IllegalArgumentException("Price cannot quote zero units");
         }
+        // A worth of zero is accepted on purpose: a delisted or bankrupt
+        // company's shares really are quoted at nothing, and refusing that
+        // quote would leave the position valued at its last price instead.
     }
 
     public static Price of(Quantity units, Money worth, LocalDate date) {
@@ -64,6 +67,17 @@ public final class Price {
         }
         long amount = LedgerArithmetic.mulDiv(quantity.units(), worth.amount(), units.units(), LedgerArithmetic.Rounding.TRUNC);
         return Money.of(amount, worth.commodity());
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof Price other
+                && units.equals(other.units) && worth.equals(other.worth) && date.equals(other.date);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(units, worth, date);
     }
 
     @Override

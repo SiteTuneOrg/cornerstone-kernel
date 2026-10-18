@@ -59,15 +59,34 @@ public final class Ledger {
     }
 
     private Commodity registerCommodity(Commodity requested) {
+        Commodity resolved = resolveCommodity(requested);
+        commoditiesByCode.putIfAbsent(resolved.code(), resolved);
+        return resolved;
+    }
+
+    /**
+     * The registered commodity for {@code requested}'s code, or
+     * {@code requested} itself when the code is new — WITHOUT registering it,
+     * so a call refused later (a blank name, a reused id) leaves no commodity
+     * behind. Refuses a code registered under another scale or kind.
+     */
+    private Commodity resolveCommodity(Commodity requested) {
         Commodity existing = commoditiesByCode.get(requested.code());
         if (existing == null) {
-            commoditiesByCode.put(requested.code(), requested);
             return requested;
         }
         if (existing.scale() != requested.scale() || existing.kind() != requested.kind()) {
             throw new CommodityConflictException(existing, requested);
         }
         return existing;
+    }
+
+    /** Refuses a commodity this ledger never registered, or one registered under another shape. */
+    private void requireRegistered(Commodity commodity) {
+        if (!commoditiesByCode.containsKey(commodity.code())) {
+            throw new UnknownCommodityException(commodity);
+        }
+        resolveCommodity(commodity);
     }
 
     public Optional<Commodity> findCommodity(String code) {
@@ -88,7 +107,8 @@ public final class Ledger {
      */
     public Account openRootAccount(String id, String name, AccountNature nature, Commodity commodity) {
         requireUnusedId(id);
-        Account account = new Account(id, name, nature, registerCommodity(commodity));
+        Account account = new Account(id, name, nature, resolveCommodity(commodity));
+        registerCommodity(account.commodity());
         account.bindLedger(this);
         accountsById.put(id, account);
         roots.add(account);
@@ -104,9 +124,10 @@ public final class Ledger {
     public Account openAccount(String id, String name, Commodity commodity, Account parent) {
         requireOwnedByThisLedger(parent);
         requireUnusedId(id);
-        Account account = new Account(id, name, parent.nature(), registerCommodity(commodity));
+        Account account = new Account(id, name, parent.nature(), resolveCommodity(commodity));
         account.bindLedger(this);
         parent.addChild(account);
+        registerCommodity(account.commodity());
         accountsById.put(id, account);
         return account;
     }
@@ -119,7 +140,7 @@ public final class Ledger {
      * silently handing back the wrong-shaped account.
      */
     public Account rootAccountOrCreate(String id, String name, AccountNature nature, Commodity commodity) {
-        Commodity resolved = registerCommodity(commodity);
+        Commodity resolved = resolveCommodity(commodity);
         Account existing = accountsById.get(id);
         if (existing == null) {
             return openRootAccount(id, name, nature, resolved);
@@ -131,7 +152,7 @@ public final class Ledger {
     /** Like {@link #rootAccountOrCreate}, for a child of {@code parent}. */
     public Account accountOrCreate(String id, String name, Commodity commodity, Account parent) {
         requireOwnedByThisLedger(parent);
-        Commodity resolved = registerCommodity(commodity);
+        Commodity resolved = resolveCommodity(commodity);
         Account existing = accountsById.get(id);
         if (existing == null) {
             return openAccount(id, name, resolved, parent);
@@ -142,7 +163,7 @@ public final class Ledger {
 
     private static void requireSameShape(
             Account existing, String id, String name, AccountNature nature, Commodity commodity, Optional<Account> parent) {
-        boolean same = existing.name().equals(name)
+        boolean same = existing.name().equals(Account.normalizeName(name))
                 && existing.nature() == nature
                 && existing.commodity().equals(commodity)
                 && existing.parent().equals(parent);
@@ -159,6 +180,11 @@ public final class Ledger {
 
     public Optional<Account> findAccount(String id) {
         return Optional.ofNullable(accountsById.get(id));
+    }
+
+    /** Called by {@link Account#addChild} when a root of this ledger is moved under another account. */
+    void detachRoot(Account account) {
+        roots.remove(account);
     }
 
     public List<Account> roots() {
@@ -179,6 +205,16 @@ public final class Ledger {
      * it's a retried call with the same object, or a second, distinct entry
      * built with a reused id): either would otherwise double-count every
      * posting in it with no signal to the caller.
+     *
+     * <p>{@code build()} validated the entry's shape against the accounts as
+     * they were then; this checks it against the book as it is now. Every
+     * commodity it carries (the entry's currency, each posting's money and
+     * quantity) must be the one this ledger registered under that code —
+     * {@link Commodity#equals} compares only the code, so an ad hoc
+     * {@code BRL} of another scale would otherwise add centavos to reais —
+     * and every account must still accept postings, since an
+     * {@link Account} may have gained a child, been hidden or become a
+     * placeholder after the entry was built.
      */
     public void post(JournalEntry entry) {
         Objects.requireNonNull(entry, "entry");
@@ -188,9 +224,13 @@ public final class Ledger {
         // Validate every posting before mutating anything — a rejected
         // entry (e.g. its 3rd of 5 postings turns out foreign) must leave
         // no trace in entriesById/postedPostings, not a partial one.
+        requireRegistered(entry.currency());
         for (Posting posting : entry.postings()) {
             requireOwnedByThisLedger(posting.account());
+            requireRegistered(posting.amount().commodity());
+            posting.quantity().ifPresent(q -> requireRegistered(q.commodity()));
         }
+        JournalEntry.Builder.requirePostable(entry.postings());
         entriesById.put(entry.id(), entry);
         postedPostings.addAll(entry.postings());
     }
@@ -290,7 +330,7 @@ public final class Ledger {
         long total = 0;
         for (JournalEntry entry : entriesById.values()) {
             for (Posting posting : entry.postingsFor(account)) {
-                total = Math.addExact(total, posting.signedAmount());
+                total = LedgerArithmetic.add(total, posting.signedAmount(), "Ledger.balanceOf");
             }
         }
         return total;
@@ -328,15 +368,20 @@ public final class Ledger {
         long total = 0;
         for (JournalEntry entry : entriesById.values()) {
             for (Posting posting : entry.postingsFor(account)) {
-                total = Math.addExact(total, posting.signedQuantity().orElseGet(posting::signedAmount));
+                total = LedgerArithmetic.add(total, posting.signedQuantity().orElseGet(posting::signedAmount),
+                        "Ledger.unitsOf");
             }
         }
         return total;
     }
 
     /**
-     * Trial balance: every account that has at least one posting, mapped to
-     * its signed balance. A single pass over every posted entry's postings
+     * Trial balance: every account whose signed balance is not zero (an
+     * account that moved and closed at zero, such as a settled TRADING leg,
+     * is left out), mapped to that balance. Like {@link #balanceOf}, each
+     * posting counts its {@link Money} in its entry's currency, so in a book
+     * with entries in more than one currency a line can add two currencies:
+     * read {@link #unitsOf} per account instead. A single pass over every posted entry's postings
      * — not {@link #balanceOf} called once per account, which would re-walk
      * every entry for every account instead of once total.
      */
@@ -344,7 +389,8 @@ public final class Ledger {
         Map<Account, Long> totals = new LinkedHashMap<>();
         for (JournalEntry entry : entriesById.values()) {
             for (Posting posting : entry.postings()) {
-                totals.merge(posting.account(), posting.signedAmount(), Math::addExact);
+                totals.merge(posting.account(), posting.signedAmount(),
+                        (a, b) -> LedgerArithmetic.add(a, b, "Ledger.trialBalance"));
             }
         }
         totals.values().removeIf(balance -> balance == 0);

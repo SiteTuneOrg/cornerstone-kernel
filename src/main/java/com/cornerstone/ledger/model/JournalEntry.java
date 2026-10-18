@@ -177,11 +177,7 @@ public final class JournalEntry {
             if (postings.size() < 2 && !standaloneQuantityAdjustment) {
                 throw new InsufficientPostingsException(id, postings.size());
             }
-            for (Account account : postings.stream().map(Posting::account).distinct().toList()) {
-                if (!account.acceptsPostings()) {
-                    throw new AccountNotPostableException(account, reasonNotPostable(account));
-                }
-            }
+            requirePostable(postings);
             JournalEntry entry = new JournalEntry(this);
             Money debits = entry.totalDebits();
             Money credits = entry.totalCredits();
@@ -189,6 +185,21 @@ public final class JournalEntry {
                 throw new UnbalancedEntryException(debits, credits);
             }
             return entry;
+        }
+
+        /**
+         * Refuses an account that does not accept postings. Run twice on
+         * purpose: here, against the accounts as they are when the entry is
+         * built, and again by {@link Ledger#post}, because an {@link Account}
+         * is mutable and may have gained a child, been hidden or become a
+         * placeholder between the two.
+         */
+        static void requirePostable(List<Posting> postings) {
+            for (Account account : postings.stream().map(Posting::account).distinct().toList()) {
+                if (!account.acceptsPostings()) {
+                    throw new AccountNotPostableException(account, reasonNotPostable(account));
+                }
+            }
         }
 
         private static String reasonNotPostable(Account account) {

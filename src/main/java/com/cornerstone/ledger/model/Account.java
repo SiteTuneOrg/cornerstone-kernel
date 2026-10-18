@@ -1,5 +1,6 @@
 package com.cornerstone.ledger.model;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -64,9 +65,23 @@ public final class Account {
         this.ledger = ledger;
     }
 
-    private static String requireValidName(String name) {
-        Objects.requireNonNull(name, "name");
-        if (name.isBlank()) {
+    /**
+     * The form a name is stored and compared in: surrounding whitespace
+     * stripped and Unicode NFC, so "Aluguel ", and "Aluguél" typed as NFD (the
+     * usual shape of a name read off a macOS file), are the sibling
+     * "Aluguel"/"Aluguél" already is rather than a second account the user
+     * cannot tell apart. Case is kept and compared as typed: "aluguel" and
+     * "Aluguel" are two names, which is a consumer's rule to tighten if it
+     * wants to.
+     */
+    static String normalizeName(String name) {
+        return name == null ? null : Normalizer.normalize(name.strip(), Normalizer.Form.NFC);
+    }
+
+    private static String requireValidName(String raw) {
+        Objects.requireNonNull(raw, "name");
+        String name = normalizeName(raw);
+        if (name.isEmpty()) {
             throw new IllegalArgumentException("blank account name");
         }
         if (name.contains(":")) {
@@ -82,10 +97,18 @@ public final class Account {
     /**
      * Attaches {@code child} under this account. Enforces, at the point of
      * attachment, the rules that matter for a tree edge: no cycle, nature
-     * inheritance, and unique sibling names/codes.
+     * inheritance, unique sibling names/codes, and one book — both accounts
+     * belong to the same {@link Ledger}, or both to none. Grafting a
+     * standalone account, or another book's, under a ledger's account would
+     * make a leaf stop accepting postings for a child the ledger cannot find,
+     * and skip the ledger's chart-wide code uniqueness. A root of the ledger
+     * moved under another account stops being one of its {@link Ledger#roots}.
      */
     public void addChild(Account child) {
         Objects.requireNonNull(child, "child");
+        if (child.ledger != this.ledger) {
+            throw new ForeignAccountException(this.ledger == null ? this : child);
+        }
         if (child == this || this.isDescendantOf(child)) {
             throw new CyclicAccountException(child, this);
         }
@@ -104,6 +127,8 @@ public final class Account {
         }
         if (child.parent != null) {
             child.parent.children.remove(child);
+        } else if (child.ledger != null) {
+            child.ledger.detachRoot(child);
         }
         child.parent = this;
         children.add(child);
@@ -119,7 +144,12 @@ public final class Account {
         return !placeholder && !system && !hidden && children.isEmpty();
     }
 
-    /** Whether this account is eligible to be disabled: never a root, never a system account. */
+    /**
+     * Whether a user-facing layer should OFFER to disable this account: never
+     * a root, never a system account. Advice only — {@link #hide()} does not
+     * enforce it, because a consumer may hold its book flat (every account a
+     * root) and still have to restate which accounts are hidden.
+     */
     public boolean canBeDisabled() {
         return parent != null && !system;
     }
@@ -210,7 +240,10 @@ public final class Account {
         return hidden;
     }
 
-    /** Soft-deletes the account: stops accepting new postings, history untouched. */
+    /**
+     * Soft-deletes the account: stops accepting new postings, history
+     * untouched. Unconditional; see {@link #canBeDisabled()}.
+     */
     public void hide() {
         this.hidden = true;
     }
