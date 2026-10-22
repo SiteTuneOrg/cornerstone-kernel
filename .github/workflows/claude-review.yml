@@ -1,0 +1,40 @@
+# Runs Claude's code review when a PR is opened, gets new commits, is reopened
+# or leaves draft. Same command as the scheduled review task: comments only.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# A push during a review cancels it and reviews the new head instead.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    # No drafts, no forks (a fork's code must not run with the token), no Dependabot
+    # (its runs do not see repository secrets, and its PRs are version bumps).
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            /code-review max --comment ${{ github.event.pull_request.number }}
+            Repository: ${{ github.repository }}. Comments only: never approve and never request changes.
+          claude_args: >-
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
