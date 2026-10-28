@@ -37,18 +37,39 @@ jobs:
       # Every step of the prompt goes through gh; without it the run would be green and
       # review nothing.
       - run: gh --version
+      # Already reviewed? A reply to an earlier thread is a review on the head too, and on a
+      # public repository anyone can leave a review or a comment: count only a comment first
+      # written on the head (original_commit_id: commit_id moves to each new head while the
+      # line still exists), or a summary naming it, by this job or by a member. Decided here,
+      # so the model never reads those bodies to decide.
+      - id: seen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          trusted='def trusted: .user.login == "github-actions[bot]" or (.author_association | IN("OWNER", "MEMBER", "COLLABORATOR"));'
+          threads=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/comments" \
+            --jq "$trusted"' .[] | select(.in_reply_to_id == null and .original_commit_id == env.SHA and trusted) | .id')
+          summaries=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq "$trusted"' .[] | select(trusted and (.user.login == "github-actions[bot]" or (.body | startswith("Review of this PR")))) | select(.body | contains(env.SHA[0:7])) | .id')
+          if [ -n "$threads$summaries" ]; then echo reviewed=true; else echo reviewed=false; fi >> "$GITHUB_OUTPUT"
+          if [ -n "$threads$summaries" ]; then echo "::notice::$SHA was already reviewed; skipping."; fi
       # On a self-hosted runner this workspace is ci.yml's too, and checkout keeps its .git
       # (hooks, config) when the remote matches: start from an empty one.
-      - run: find . -mindepth 1 -delete
+      - if: steps.seen.outputs.reviewed != 'true'
+        run: find . -mindepth 1 -delete
       # The head, not refs/pull/N/merge: comments are anchored to the head's line numbers.
       # persist-credentials only stops checkout's own copy: the action then rewrites origin
       # with the job token, so .git/config holds it while the job runs (hence the Read deny).
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.seen.outputs.reviewed != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       # Pinned by SHA to a release at least 7 days old, so Dependabot's cooldown applies.
-      - uses: anthropics/claude-code-action@a26b07d8c778b0c43f64618e5fd29fd0f8af72e8 # v1.0.250
+      - if: steps.seen.outputs.reviewed != 'true'
+        uses: anthropics/claude-code-action@a26b07d8c778b0c43f64618e5fd29fd0f8af72e8 # v1.0.250
         # An empty home: an earlier job on a self-hosted runner could have planted a
         # ~/.bashrc, ~/.gitconfig or ~/.local/bin that would run next to the token.
         env:
@@ -63,16 +84,20 @@ jobs:
           prompt: |
             /code-review max --comment ${{ github.event.pull_request.number }}
             Repository: ${{ github.repository }}. Head commit: ${{ github.event.pull_request.head.sha }} (pass it as commit_id on every inline comment).
-            First read `gh pr view ${{ github.event.pull_request.number }} --json comments,reviews`: if a review summary there already names this head commit (full or 7-character SHA), or a review is already on it, stop and post nothing.
-            The working tree is checked out at that commit. Read the diff with `gh pr diff`; git history is not available.
+            The working tree is checked out at that commit. Read the diff with `gh pr diff`; history is not available in this job.
             Before posting anything, check `gh pr view ${{ github.event.pull_request.number }} --json headRefOid`: if the head is no longer that commit, stop and post nothing (the scheduled review covers the new head).
             Comments only: never approve and never request changes. Post only the final findings; never call a comment tool to test it.
             The working tree's CLAUDE.md and .claude/ are the base branch's (the action restores them); the PR's own copies are under .claude-pr/.
-            Findings on lines outside the diff go together in one `gh pr comment`. In any comment body, write git commands and config keys inside backticks (a repository hook refuses some of them unquoted).
-            When done, post one `gh pr comment` that names the head commit you reviewed and how many findings you posted, saying so when there were none.
-          # Reads inside the working tree need no rule; .git/config holds the job token, and
-          # --body-file (short form -F) would publish any local file.
+            Post every PR comment as `gh pr comment ${{ github.event.pull_request.number }} --body "…"`, the whole body in that one argument; no other form is allowed.
+            Findings on lines outside the diff go together in one such comment. In any comment body, the word git must come right after a backtick (`git`, or a code span that opens with it): anywhere else, the base branch's hook refuses the line when it also has `core.hooksPath`, or commit and an option such as `-n`, even when those are in backticks.
+            When done, post one such comment that names the head commit you reviewed and how many findings you posted, saying so when there were none.
+          # dontAsk: anything not allowed below is refused, never handed to a classifier.
+          # Reads inside the working tree need no rule; the home (empty, this run's only)
+          # holds Claude Code's saved output of a large `gh pr diff`; .git/config holds the
+          # job token. Only `--body` is allowed for comments, so no spelling of
+          # --body-file / -F can publish a local file, and only on this PR.
           claude_args: >-
             --setting-sources project,local
-            --allowedTools "Agent,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
-            --disallowedTools "Read(./.git/**),Bash(gh pr comment *--body-file*),Bash(gh pr comment * -F *)"
+            --permission-mode dontAsk
+            --allowedTools "Agent,Read(~/.claude/projects/**),mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment ${{ github.event.pull_request.number }} --body *),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --disallowedTools "Read(./.git/**)"
