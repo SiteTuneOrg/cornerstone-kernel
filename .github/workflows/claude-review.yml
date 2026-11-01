@@ -88,7 +88,7 @@ jobs:
           persist-credentials: false
       # Pinned by SHA to a release at least 7 days old, so Dependabot's cooldown applies.
       - if: steps.seen.outputs.reviewed != 'true'
-        uses: anthropics/claude-code-action@a26b07d8c778b0c43f64618e5fd29fd0f8af72e8 # v1.0.250
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         # An empty home: an earlier job on a self-hosted runner could have planted a
         # ~/.bashrc, ~/.gitconfig or ~/.local/bin that would run next to the token.
         env:
