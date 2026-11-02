@@ -101,7 +101,7 @@ jobs:
           # persistent runner its fixed /tmp file replayed earlier reviews' comments.
           classify_inline_comments: false
           prompt: |
-            /code-review max --comment ${{ github.event.pull_request.number }}
+            /code-review high --comment ${{ github.event.pull_request.number }}
             Repository: ${{ github.repository }}. Head commit: ${{ github.event.pull_request.head.sha }} (pass it as commit_id on every inline comment).
             The working tree is checked out at that commit. Read the diff with `gh pr diff`; history is not available in this job.
             Before posting anything, check `gh pr view ${{ github.event.pull_request.number }} --json headRefOid`: if the head is no longer that commit, stop and post nothing (the scheduled review covers the new head).
